@@ -16,7 +16,3 @@ __pycache__/
 */*/__pycache__/
 */*/*/__pycache__/
 
-# 忽略 license 文件
-license
-LICENSE
-License 
