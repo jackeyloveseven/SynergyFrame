@@ -114,9 +114,8 @@ class MaskedStyleAttnProcessor(AttnProcessor2_0):
         return hidden_states
 
 
-obj = 'nike'
+obj = '5'
 texture = 'cup_glaze'
-# texture = '5'
 
 
 device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
@@ -152,7 +151,7 @@ for k, filename in enumerate(filenames):
     depth = depth_anything.infer_image(raw_image, input_size)
     
     depth = (depth - depth.min()) / (depth.max() - depth.min()) * 255.0
-    depth = depth.astype(np.uint8)
+    depth = depth.astype(np.float32)
     
     depth = np.repeat(depth[..., np.newaxis], 3, axis=-1)
     
@@ -162,7 +161,7 @@ for k, filename in enumerate(filenames):
     msdem = MultiScaleDepthEnhancement(
         edge_low_threshold=50,
         edge_high_threshold=150,
-        feature_weights=(0.008, 0.008, 0.6)
+        feature_weights=(0.01, 0.01, 0.01)
     )
 
     # 一行代码完成增强
@@ -232,7 +231,7 @@ LIGHT_DIRECTIONS = {
     'left': [-1.0, 0.0, 0.5], 'right': [1.0, 0.0, 0.5], 'front': [0.0, 1.0, 0.5],
     'front_top': [0.0, 0.5, 1.0], 'dramatic': [-0.7, 0.3, 0.5],
 }
-dsm = DirectionalShadingModule(ambient_strength=0.3, diffuse_strength=0.7)
+dsm = DirectionalShadingModule(ambient_strength=0.9, diffuse_strength=1.9)
 target_image_np = np.array(target_image)
 # 假设depth和mask已经准备好
 depth_np = np.array(enhanced_depth)
@@ -255,7 +254,7 @@ grid = image_grid([target_image.resize((256, 256)), ip_image.resize((256, 256)),
 grid.save("input_grid_improved.png")
 
 # 执行生成
-num_samples = 1
+num_samples = 3
 # 注意这里的 `mask_image` 参数需要的是PIL格式的蒙版
 images = ip_model.generate(
     pil_image=ip_image,
@@ -265,8 +264,7 @@ images = ip_model.generate(
     controlnet_conditioning_scale=0.9,
     num_samples=num_samples,
     num_inference_steps=30,
-    seed=42,
-    prompt="with text 'hello'"
+    seed=42
 )
 images[0].save("output_improved.png")
 

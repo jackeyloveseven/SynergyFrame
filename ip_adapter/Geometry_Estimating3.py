@@ -83,7 +83,6 @@ class MultiScaleDepthEnhancement:
         combined_features = (grad_magnitude * 0.7 + roughness * 0.3)
         combined_features = cv2.normalize(combined_features, None, 0, 255, cv2.NORM_MINMAX)
         
-        # CRITICAL FIX: Return as float32 to prevent quantization artifacts
         return combined_features.astype(np.float32)
     
     def _generate_content_aware_mask(self, depth):
@@ -110,7 +109,6 @@ class MultiScaleDepthEnhancement:
         mask = self._generate_content_aware_mask(depth)
         enhanced = depth + self.feature_weights[2] * grad * mask
         
-        # CRITICAL FIX: Return as float32 to preserve precision
         return np.clip(enhanced, 0, 255).astype(np.float32)
     
     def enhance(self, depth_map, reference_image):
@@ -124,11 +122,15 @@ class MultiScaleDepthEnhancement:
         Returns:
             np.ndarray: Enhanced depth map as a float32 array to preserve precision.
         """
-        # Ensure depth map is in correct format
         if depth_map.ndim == 3:
             depth_map = depth_map[:, :, 0]
         depth_map = depth_map.astype(np.float32)
-        
+
+        # ULTIMATE FIX: Apply a Bilateral Filter to the source depth map.
+        # This is highly effective at smoothing flat regions (removing banding)
+        # while preserving sharp edges.
+        depth_map = cv2.bilateralFilter(depth_map, d=9, sigmaColor=75, sigmaSpace=75)
+
         # Extract multi-scale features
         boundary_features = self._extract_boundary_features(reference_image)
         gradient_features = self._compute_gradient_features(depth_map)
@@ -148,7 +150,9 @@ class MultiScaleDepthEnhancement:
         # Final structure enhancement
         enhanced_depth = self._enhance_local_structure(enhanced_depth)
         
-        # The returned depth is now float32, preventing quantization.
+        # Apply a final blur to smooth out any minor artifacts from the enhancement process
+        enhanced_depth = cv2.GaussianBlur(enhanced_depth, (5, 5), 0)
+
         return enhanced_depth
 
 # 使用示例:
