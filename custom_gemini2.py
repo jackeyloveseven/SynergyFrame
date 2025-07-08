@@ -1,7 +1,7 @@
 from diffusers import StableDiffusionXLControlNetInpaintPipeline, ControlNetModel,  StableDiffusionXLControlNetImg2ImgPipeline
 from rembg import remove, new_session
 import torch
-from ip_adapter import IPAdapterXL
+from ip_adapter.custom_ip_adapter2 import IPAdapterCustom
 from ip_adapter.utils import register_cross_attention_hook, get_net_attn_map, attnmaps2images
 from PIL import Image, ImageChops, ImageEnhance
 import numpy as np
@@ -120,7 +120,7 @@ pipe = StableDiffusionXLControlNetImg2ImgPipeline.from_pretrained(
 ).to(device)
 pipe.unet = register_cross_attention_hook(pipe.unet)
 
-ip_model = IPAdapterXL(pipe, image_encoder_path, ip_ckpt, device, target_blocks=["up_blocks.0.attentions.1", "down_blocks.2.attentions.1"])  # , target_blocks=["up_blocks.0.attentions.1"]
+ip_model = IPAdapterCustom(pipe, image_encoder_path, ip_ckpt, device, target_blocks=["up_blocks.0.attentions.1", "down_blocks.2.attentions.1"], top_k=1)  # , target_blocks=["up_blocks.0.attentions.1"]
 
 
 
@@ -220,8 +220,5 @@ init_img.resize((256, 256)).save("init.png")
 
 
 num_samples = 3
-images = ip_model.generate(pil_image=ip_image, image=init_img, control_image=depth_map, mask_image=mask, controlnet_conditioning_scale=0.9, num_samples=num_samples, num_inference_steps=30, seed=42)
-images[0].save("output.png")
-
-
-
+images = ip_model.generate(pil_image=ip_image, image=init_img, control_image=depth_map, mask_image=mask, spatial_mask=target_mask, controlnet_conditioning_scale=0.9, num_samples=num_samples, num_inference_steps=30, seed=42)
+images[0].save("custom_output2.png")

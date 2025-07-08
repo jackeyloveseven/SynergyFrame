@@ -7,11 +7,11 @@ import numpy as np
 import cv2
 import os
 from depth_anything_v2.dpt import DepthAnythingV2
-from Geometry_Estimating import MultiScaleDepthEnhancement, DirectionalShadingModule
+from ip_adapter.Geometry_Estimating import MultiScaleDepthEnhancement, DirectionalShadingModule
 # GEMINI REFACTOR: Import the custom attention processor from its own file
 from attention_processor import CrossAttentionSwapProcessor
 
-obj = '5'
+obj = '2'
 texture = 'cup_glaze'
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -49,7 +49,7 @@ depth = (depth - depth.min()) / (depth.max() - depth.min()) * 255.0
 depth = depth.astype(np.float32)
 depth_3c = np.repeat(depth[..., np.newaxis], 3, axis=-1)
 
-msdem = MultiScaleDepthEnhancement(edge_low_threshold=50, edge_high_threshold=150, feature_weights=(0.008, 0.008, 0.6))
+msdem = MultiScaleDepthEnhancement(edge_low_threshold=50, edge_high_threshold=150, feature_weights=(0.01, 0.01, 0.1))
 enhanced_depth = msdem.enhance(depth_3c, raw_image_bgr)
 
 target_image = Image.open(target_image_path).convert('RGB')
@@ -69,14 +69,14 @@ mask = target_mask.resize((1024, 1024))
 
 # --- 3. Textual Inversion and Prompt Engineering ---
 # pipe.load_textual_inversion("sd-concepts-library/walter-wick-photography")
-pipe.load_textual_inversion("sd-concepts-library/fp-hk-photo-online")
+pipe.load_textual_inversion("sd-concepts-library/fp-hk-photo-online", mean_resizing=False)
 # pipe.load_textual_inversion("sd-concepts-library/midjourney-style") # midjourney
 # pipe.load_textual_inversion("sd-concepts-library/line-art")
 # pipe.load_textual_inversion("sd-concepts-library/low-poly-hd-logos-icons") # simplist
 # pipe.load_textual_inversion("sd-concepts-library/moebius") # strange
 
 structure_prompt = "realistic, masterpiece, high quality, high resolution, 8k"
-texture_prompt = "blue and white porcelain,cobalt blue patterns,vase texture"
+texture_prompt = "vase texture, chinese porcelain"
 negative_prompt = "low quality, unrealistic, blurry, deformed"
 
 # --- 4. Advanced Control: Cross-Attention Swapping ---
@@ -110,7 +110,7 @@ images = pipe(
     image=init_img,
     control_image=depth_map,
     mask_image=mask,
-    controlnet_conditioning_scale=0.9,
+    controlnet_conditioning_scale=0.8,
     num_inference_steps=30,
     seed=42,
     # GEMINI FIX: The pipeline expects a list of tensors for this argument.
