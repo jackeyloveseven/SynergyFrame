@@ -1,0 +1,19 @@
+{
+    "obj": "iron",
+    "texture": "vase",
+    "input_dir": "demo_assets/input_imgs",
+    "texture_dir": "demo_assets/texture",
+    "depth_dir": "demo_assets/depths",
+    "output_file": "synergy_output.png",
+    "light_direction": "dramatic",
+    "ambient_strength": 1.2,
+    "diffuse_strength": 0.8,
+    "use_cuda": true,
+    "use_mixed_precision": true,
+    "use_fp16": true,
+    "use_xformers": true,
+    "backbone": "Img2Img"
+} 
+
+
+

@@ -1,0 +1,11 @@
+{
+    "obj": "5",
+    "texture": "cup_glaze",
+    "input_dir": "demo_assets/input_imgs/",
+    "texture_dir": "demo_assets/material_exemplars/",
+    "depth_dir": "demo_assets/depths",
+    "output_file": "synergy_output.png",
+    "light_direction": "right",
+    "ambient_strength": 0.8,
+    "diffuse_strength": 1.5
+} 

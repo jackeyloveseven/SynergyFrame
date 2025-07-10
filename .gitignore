@@ -16,3 +16,5 @@ __pycache__/
 */*/__pycache__/
 */*/*/__pycache__/
 
+StyleBench/*
+demo_assets/texture/*
