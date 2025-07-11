@@ -18,6 +18,7 @@ __pycache__/
 
 /StyleBench
 /demo_assets/texture
+/demo_assets/depths
 
 infer-text.py
 infer-inverse.py
