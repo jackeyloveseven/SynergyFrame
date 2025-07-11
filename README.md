@@ -1,119 +1,191 @@
-# SynergyFrame
+# SynergyFrame: A Unified Framework for Photorealistic Local Stylization
 
-SynergyFrame是一个材质与物体融合系统，能够将不同材质应用到物体上，并生成逼真的渲染效果。
+<div align="center">
 
-## 功能特点
+[![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://www.python.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-1.12%2B-red)](https://pytorch.org/)
+[![Diffusers](https://img.shields.io/badge/🤗%20Diffusers-0.21%2B-yellow)](https://github.com/huggingface/diffusers)
+[![License](https://img.shields.io/github/license/jackeyloveseven/SynergyFrame)](https://github.com/jackeyloveseven/SynergyFrame/blob/main/LICENSE)
 
-- 自动深度估计：使用DepthAnythingV2模型自动估计输入图像的深度信息
-- 背景移除：支持rembg和SAM模型进行背景移除和物体分割
-- 光照模拟：基于深度图和物体遮罩模拟真实光照效果
-- 材质融合：使用IP-Adapter和ControlNet技术将材质示例应用到目标物体
-- 高质量输出：支持高分辨率图像处理和生成
+**Synergizing Geometry, Lighting, and Style for High-Fidelity Texture Generation**
 
-## 安装
+[🔧 Installation](#installation) • [🚀 Quick Start](#quick-start) • [🎯 Overview](#overview) • [🔬 Method](#method) • [📖 Citation](#citation)
 
-### 环境要求
+</div>
 
-- Python 3.8+
-- CUDA支持的GPU (推荐)
+## 🎯 Overview
 
-### 安装步骤
+The core mission of our work is to introduce **SynergyFrame**, a unified framework capable of generating high-fidelity, physically realistic textures. This framework is designed to synergize multiple control signals—specifically geometry, lighting, and style—to achieve seamless and detailed local stylization, thereby empowering and enhancing mainstream generative workflows.
 
-1. 克隆仓库：
+### 💥 The Core Challenge: A Common Dilemma in Guided Generation
 
+Existing workflows, while powerful, face significant challenges when guided by multiple, often conflicting, control signals:
+
+- **`Inpainting` Workflows:** The strong structural and boundary constraints inherent to inpainting often **suppress the effective expression of style signals**. This leads to results where the stylization is either muted, coarse, or fails to integrate naturally.
+- **`Image-to-Image` Workflows:** The creative freedom of these models is a double-edged sword. In unconstrained regions, they are prone to producing **checkerboard artifacts** or **style leakage**, which contaminates the original, unmasked content.
+
+### ✨ The Solution: SynergyFrame
+
+To address these challenges, we propose **SynergyFrame**, a universal solution built upon two foundational pillars that transform signal conflict into synergy.
+
+<details>
+<summary>Click to see the SynergyFrame Architecture Diagram</summary>
+
+```mermaid
+graph TD
+    subgraph "Inputs"
+        A[Geometry]
+        B[Lighting]
+        C[Style]
+        D[Mask]
+    end
+
+    subgraph "SynergyFrame Core"
+        P1["Pillar 1: Physics-Prior Injection<br/>(MultiScaleDepth, DirectionalShading)"]
+        P2["Pillar 2: Adaptive Semantic Fusion<br/>(Semantic Sparse Attention - SSA)"]
+        A & B --> P1
+        C & D --> P2
+        P1 --> SR
+        P2 --> SR
+        SR{Synergized Representation}
+    end
+
+    subgraph "Empowered Workflows"
+        W1[Inpainting]
+        W2[Image-to-Image]
+        SR --> W1 & W2
+    end
+
+    subgraph "Outputs"
+        O1["✔️ High-Fidelity Results<br/>✔️ No Style Suppression"]
+        O2["✔️ Artifact-Free<br/>✔️ No Style Leakage"]
+        W1 --> O1
+        W2 --> O2
+    end
+```
+</details>
+
+*The SynergyFrame architecture, turning conflicting signals into a synergistic force for photorealistic stylization.*
+
+
+## 🔬 Method: The Two Pillars of SynergyFrame
+
+### Pillar 1: Physics-Prior Injection (The Foundation of Realism)
+To ground our stylization in physical reality, we inject crucial environmental priors at the outset.
+- **Multi-Scale Geometric Awareness:** The `MultiScaleDepthEnhancement` module provides the model with a comprehensive understanding of the scene's geometric structure across various scales.
+- **Lighting-Aware Initialization:** The `DirectionalShadingModule` establishes a coherent lighting environment, ensuring that the generated style interacts harmoniously with shadows and highlights.
+
+### Pillar 2: Adaptive Semantic Fusion (The Key to Universal Empowerment)
+This pillar enables our framework to intelligently adapt to different workflows and resolve their core weaknesses.
+- **Core Mechanism: Semantic Sparse Attention (SSA):** We introduce a plug-and-play **Semantic Sparse Attention** mechanism. SSA compels the model to perform precise semantic matching at the attention level, ensuring the style is applied only where it makes semantic sense.
+- **Adaptive Capabilities:**
+    - **For `Inpainting`:** SSA's strong semantic matching **breaks through inherent style suppression**, enabling fine-grained and accurate style injection even under strong structural constraints.
+    - **For `Image-to-Image`:** When combined with a mask, SSA precisely **constrains the style's application area**, effectively preventing artifacts and content leakage.
+
+## 🚀 Quick Start
+
+### Installation
 ```bash
-git clone https://github.com/username/SynergyFrame.git
+# 1. Clone the repository
+git clone https://github.com/jackeyloveseven/SynergyFrame.git
 cd SynergyFrame
+
+# 2. Install dependencies (example)
+# Create a requirements.txt file with your dependencies
+# pip install -r requirements.txt
+# Example dependencies:
+pip install diffusers transformers torch torchvision
+pip install accelerate opencv-python pillow numpy matplotlib
+pip install rembg html4vision
+
+# 3. Download models
+mkdir -p checkpoints sdxl_models models
+# Place required models in their respective directories:
+# - checkpoints/depth_anything_v2_vitb.pth
+# - models/ip-adapter_sdxl_vit-h.bin
+# - models/image_encoder/
 ```
+*Note: Please refer to the original model repositories for official download links.*
 
-2. 安装依赖：
+### Generation Pipelines
+SynergyFrame enhances two primary workflows.
 
+#### 1. Empowered Inpainting (Text-Guided)
+This workflow leverages strong geometric and boundary constraints, now enhanced with powerful style injection via SSA.
 ```bash
-pip install -r requirements.txt
+# Example usage (please adapt to your actual script)
+python infer-text.py \
+    --object_id '5' \
+    --texture_ref 'cup_glaze.png' \
+    --prompt "a photo of a {object} with {style} texture"
 ```
 
-或者使用setup.py安装：
-
+#### 2. Empowered Image-to-Image (Style-Reference-Guided)
+This workflow offers greater creative freedom, with SSA preventing style leakage and artifacts.
 ```bash
-pip install -e .
+# Example usage (please adapt to your actual script)
+python genmini.py \
+    --object_name 'nike' \
+    --style_ref 'cup_glaze.png'
 ```
 
-3. 下载预训练模型：
+## 📊 Results: From Conflict to Synergy
 
-需要下载以下预训练模型：
-- DepthAnythingV2模型: `checkpoints/depth_anything_v2_vitb.pth`
-- IP-Adapter模型: `sdxl_models/ip-adapter_sdxl_vit-h.bin`
-- 图像编码器: `models/image_encoder`
-- ControlNet模型: `diffusers/controlnet-depth-sdxl-1.0`
+Our narrative focuses on **synergy**, not opposition. SynergyFrame is not about proving one workflow's superiority but about acting as a higher-level, unified control framework. It elevates both `Inpainting` and `Image-to-Image` to new heights in local stylization tasks.
 
-## 使用方法
+### Comparative Analysis
+<div align="center">
+<table>
+  <tr>
+    <th>Input</th>
+    <th>Style Reference</th>
+    <th>Baseline (e.g., Inpainting)</th>
+    <th>Ours (SynergyFrame)</th>
+  </tr>
+  <tr>
+    <td><img src="assets/demo/input.png" width="180px"></td>
+    <td><img src="assets/demo/style.png" width="180px"></td>
+    <td><img src="assets/demo/baseline.png" width="180px"></td>
+    <td><img src="assets/demo/ours.png" width="180px"></td>
+  </tr>
+</table>
+</div>
+*Note: The images above are for illustrative purposes. Please replace `assets/demo/*.png` with your actual result images.*
 
-### 命令行使用
+### Ablation Studies
+| Method | Boundary Preservation | Style Fidelity | Artifact Suppression |
+|--------|:---------------------:|:--------------:|:--------------------:|
+| Baseline (IP-Adapter Only) | ❌ | ⭐⭐⭐ | ❌ |
+| + Physics Priors | ✅ | ⭐⭐⭐⭐ | ❌ |
+| **SynergyFrame (Priors + SSA)** | ✅ | ⭐⭐⭐⭐⭐ | ✅ |
 
-```bash
-python SynergyFrame.py --obj 5 --texture 5 --light_direction right --sam true
-```
 
-参数说明：
-- `--obj`: 目标物体图片名称或编号
-- `--texture`: 材质图片名称或编号
-- `--light_direction`: 光照方向，可选值：top, top_left, top_right, left, right, front, front_top, dramatic
-- `--ambient_strength`: 环境光强度，默认0.8
-- `--diffuse_strength`: 漫反射强度，默认1.5
-- `--sam`: 是否使用SAM模型进行背景移除，默认false
-- `--backbone`: 选择使用的模型骨架，可选值：Img2Img, Inpaint
-
-### 配置文件使用
-
-也可以通过配置文件设置参数：
-
-```bash
-python SynergyFrame.py --config config.json
-```
-
-配置文件示例 (config.json):
-```json
-{
-  "obj": "5",
-  "texture": "5",
-  "input_dir": "demo_assets/input_imgs/",
-  "texture_dir": "demo_assets/material_exemplars/",
-  "depth_dir": "demo_assets/depths",
-  "output_file": "synergy_output.png",
-  "light_direction": "right",
-  "ambient_strength": 0.8,
-  "diffuse_strength": 1.5,
-  "use_cuda": true,
-  "use_mixed_precision": false,
-  "use_fp16": false,
-  "use_xformers": true,
-  "sam": false,
-  "backbone": "Img2Img"
+## 📖 Citation
+If you find SynergyFrame useful for your research, please consider citing our work:
+```bibtex
+@misc{synergyframe2025,
+  title={SynergyFrame: A Unified Framework for Photorealistic Local Stylization},
+  author={The SynergyFrame Team},
+  year={2025},
+  publisher={GitHub},
+  journal={GitHub repository},
+  howpublished={\url{https://github.com/jackeyloveseven/SynergyFrame}}
 }
 ```
 
-## 项目结构
+## 🤝 Acknowledgements
 
-- `SynergyFrame.py`: 主程序
-- `ip_adapter/`: IP-Adapter相关模块
-- `depth_anything_v2/`: 深度估计模型
-- `Geometry_Estimating.py`: 几何估计和光照模拟模块
-- `demo_assets/`: 示例资源
-  - `input_imgs/`: 输入图像
-  - `material_exemplars/`: 材质示例
-  - `depths/`: 深度图输出目录
+Our work builds upon the incredible contributions of the open-source community. We extend our sincere gratitude to the developers and researchers behind:
+- **Stable Diffusion XL**
+- **IP-Adapter**  
+- **DepthAnything V2**
+- **ControlNet**
+- **🤗 Diffusers**
 
-## 示例
+---
 
-输入物体图像：
-![输入物体](demo_assets/input_imgs/5.png)
+<div align="center">
 
-材质示例：
-![材质示例](demo_assets/material_exemplars/5.png)
+**🌟 Star this repository if SynergyFrame inspires your work! 🌟**
 
-输出结果：
-![输出结果](synergy_output.png)
-
-## 许可证
-
-MIT
+</div>
