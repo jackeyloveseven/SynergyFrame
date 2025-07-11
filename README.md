@@ -1,235 +1,119 @@
-# Asoul: Masked Attention-Guided Diffusion Inpainting for Precise Style Transfer
+# SynergyFrame
 
-<div align="center">
+SynergyFrame是一个材质与物体融合系统，能够将不同材质应用到物体上，并生成逼真的渲染效果。
 
-[![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://www.python.org/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-1.12%2B-red)](https://pytorch.org/)
-[![Diffusers](https://img.shields.io/badge/🤗%20Diffusers-0.21%2B-yellow)](https://github.com/huggingface/diffusers)
-[![License](https://img.shields.io/github/license/jackeyloveseven/Asoul)](https://github.com/jackeyloveseven/Asoul/blob/main/LICENSE)
+## 功能特点
 
-**Precision Style Transfer through Custom Attention Processors and Geometry-Aware Lighting**
+- 自动深度估计：使用DepthAnythingV2模型自动估计输入图像的深度信息
+- 背景移除：支持rembg和SAM模型进行背景移除和物体分割
+- 光照模拟：基于深度图和物体遮罩模拟真实光照效果
+- 材质融合：使用IP-Adapter和ControlNet技术将材质示例应用到目标物体
+- 高质量输出：支持高分辨率图像处理和生成
 
-[🔧 Installation](#installation) • [🚀 Quick Start](#quick-start) • [📊 Method](#method) • [📖 Citation](#citation)
+## 安装
 
-</div>
+### 环境要求
 
-## 🎯 Overview
+- Python 3.8+
+- CUDA支持的GPU (推荐)
 
-Asoul introduces **Masked Attention-Guided Diffusion Inpainting**, a novel approach for precise style transfer that combines:
+### 安装步骤
 
-1. **Custom Attention Processors** (`MaskedStyleAttnProcessor`) for spatially-controlled style injection
-2. **Geometry-Aware Lighting Simulation** (`DirectionalShadingModule`) with 8 predefined lighting directions  
-3. **Multi-Scale Depth Enhancement** (`MultiScaleDepthEnhancement`) for improved structural fidelity
-4. **Dual-Mode Generation**: Text-guided (`infer-text.py`) and image-guided (`genmini.py`) pipelines
+1. 克隆仓库：
 
-### 🌟 Key Innovation
-
-Our **MaskedStyleAttnProcessor** revolutionizes style transfer by:
-- Modulating cross-attention maps with pixel-precise masks
-- Restricting style application to designated regions only
-- Preserving object boundaries and fine details
-
-```python
-# Core Innovation: Masked Style Attention
-attention_probs = attention_probs * resized_mask.unsqueeze(-1)
-attention_probs = attention_probs / (attention_probs.sum(dim=-1, keepdim=True) + 1e-9)
-```
-
-## 🔬 Method
-
-### Architecture Overview
-
-<div align="center">
-<img src="assets/architecture_diagram.png" width="100%"/>
-</div>
-
-Our pipeline integrates three key technical contributions:
-
-#### 1. **Masked Style Attention Processor**
-```python
-class MaskedStyleAttnProcessor(AttnProcessor2_0):
-    def __init__(self, mask_tensor=None):
-        super().__init__()
-        self.mask = mask_tensor.unsqueeze(0).unsqueeze(0) if mask_tensor is not None else None
-    
-    def __call__(self, attn, hidden_states, encoder_hidden_states=None, **kwargs):
-        # Standard attention computation
-        attention_probs = attn.get_attention_scores(query, key, attention_mask)
-        
-        # 🔑 KEY INNOVATION: Spatial attention modulation
-        h = w = int(np.sqrt(attention_probs.shape[1]))
-        resized_mask = F.interpolate(self.mask, size=(h, w), mode='bilinear')
-        attention_probs = attention_probs * resized_mask.view(1, -1).unsqueeze(-1)
-        
-        return torch.bmm(attention_probs, value)
-```
-
-#### 2. **Directional Shading Module**
-```python
-# 8 Physically-Based Lighting Directions
-LIGHT_DIRECTIONS = {
-    'top': [0.0, 0.0, 1.0], 'dramatic': [-0.7, 0.3, 0.5],
-    'top_left': [-0.5, -0.5, 1.0], 'front_top': [0.0, 0.5, 1.0],
-    # ... comprehensive lighting setup
-}
-
-dsm = DirectionalShadingModule(ambient_strength=0.3, diffuse_strength=0.7)
-init_img = dsm.simulate_lighting(target_image, depth_map, light_direction, mask)
-```
-
-#### 3. **Multi-Scale Depth Enhancement**
-```python
-msdem = MultiScaleDepthEnhancement(
-    edge_low_threshold=50, edge_high_threshold=150,
-    feature_weights=(0.008, 0.008, 0.6)  # boundary, gradient, depth
-)
-enhanced_depth = msdem.enhance(depth_map, reference_image)
-```
-
-## 🚀 Quick Start
-
-### Installation
 ```bash
-git clone https://github.com/jackeyloveseven/Asoul.git
-cd Asoul
-
-# Install dependencies
-pip install diffusers torch torchvision transformers
-pip install rembg opencv-python pillow numpy matplotlib
-pip install html4vision accelerate
-
-# Download models
-mkdir -p checkpoints sdxl_models models
-# Place: depth_anything_v2_vitb.pth, ip-adapter_sdxl_vit-h.bin, image_encoder/
+git clone https://github.com/username/SynergyFrame.git
+cd SynergyFrame
 ```
 
-### Text-to-Image Generation
-```python
-# Configure in infer-text.py
-obj = '5'                    # Target object ID
-texture = 'cup_glaze'        # Material style reference
+2. 安装依赖：
 
-python infer-text.py
-```
-
-**Features:**
-- Textual Inversion integration (`walter-wick-photography`)
-- Depth-controlled generation with ControlNet
-- Multi-scale depth enhancement
-- Directional lighting simulation
-
-### Image-to-Image Style Transfer  
-```python
-# Configure in genmini.py  
-obj = 'nike'                 # Target object
-texture = 'cup_glaze'        # Style source
-
-python genmini.py
-```
-
-**Advanced Features:**
-- **Masked Style Attention**: Precise spatial control
-- **Background preservation**: Automatic segmentation
-- **Lighting-aware initialization**: Physics-based shading
-- **Multi-directional illumination**: 8 lighting presets
-
-## 📊 Technical Specifications
-
-### Model Configurations
-| Component | Architecture | Parameters | Purpose |
-|-----------|-------------|------------|---------|
-| **Base Model** | Stable Diffusion XL | 3.5B | Generation backbone |
-| **Depth Estimator** | DepthAnything V2-ViT-B | 128M | Geometry understanding |
-| **IP-Adapter** | ViT-H Image Encoder | 632M | Style conditioning |
-| **ControlNet** | Depth ControlNet SDXL | 1.3B | Depth-guided generation |
-
-### Custom Processors
-```python
-# Applied to specific attention layers
-target_blocks = ["up_blocks.0.attentions.1", "down_blocks.2.attentions.1"]
-
-# Attention processor assignment
-attn_procs = {}
-for name in pipe.unet.attn_processors.keys():
-    if name.endswith("attn2.processor"):  # Cross-attention layers
-        attn_procs[name] = MaskedStyleAttnProcessor(mask_tensor=mask)
-    else:
-        attn_procs[name] = pipe.unet.attn_processors[name]
-```
-
-## 🎨 Results
-
-### Comparative Analysis
-<div align="center">
-<table>
-  <tr>
-    <th>Input</th>
-    <th>Style Reference</th>
-    <th>Baseline</th>
-    <th>Ours (Masked Attention)</th>
-  </tr>
-  <tr>
-    <td><img src="demo_assets/input_imgs/5.png" width="150px"></td>
-    <td><img src="demo_assets/material_exemplars/cup_glaze.png" width="150px"></td>
-    <td><img src="assets/baseline_result.png" width="150px"></td>
-    <td><img src="demo_assets/output_images/5_cup_glaze.png" width="150px"></td>
-  </tr>
-</table>
-</div>
-
-### Ablation Studies
-| Method | Boundary Preservation | Style Fidelity | LPIPS ↓ |
-|--------|----------------------|---------------|---------|
-| IP-Adapter Only | ❌ | ⭐⭐⭐ | 0.23 |
-| + Depth Control | ✅ | ⭐⭐⭐⭐ | 0.19 |
-| + **Masked Attention** | ✅ | ⭐⭐⭐⭐⭐ | **0.15** |
-
-## 💡 Advanced Usage
-
-### Batch Processing
 ```bash
-python run_batch.py  # Process all object-texture combinations
-python visualization.py  # Generate HTML comparison tables
+pip install -r requirements.txt
 ```
 
-### Custom Lighting Setup
-```python
-# Define custom lighting direction
-custom_light = [-0.8, 0.4, 0.6]  # [x, y, z] normalized vector
-dsm = DirectionalShadingModule(ambient_strength=0.2, diffuse_strength=0.8)
+或者使用setup.py安装：
+
+```bash
+pip install -e .
 ```
 
-### Fine-tuning Attention Control
-```python
-# Adjust mask sensitivity
-mask_tensor = torch.from_numpy(np.array(target_mask)).float() / 255.0
-# Apply gaussian blur for softer boundaries
-mask_tensor = gaussian_blur(mask_tensor, kernel_size=5, sigma=1.0)
+3. 下载预训练模型：
+
+需要下载以下预训练模型：
+- DepthAnythingV2模型: `checkpoints/depth_anything_v2_vitb.pth`
+- IP-Adapter模型: `sdxl_models/ip-adapter_sdxl_vit-h.bin`
+- 图像编码器: `models/image_encoder`
+- ControlNet模型: `diffusers/controlnet-depth-sdxl-1.0`
+
+## 使用方法
+
+### 命令行使用
+
+```bash
+python SynergyFrame.py --obj 5 --texture 5 --light_direction right --sam true
 ```
 
-## 📖 Citation
+参数说明：
+- `--obj`: 目标物体图片名称或编号
+- `--texture`: 材质图片名称或编号
+- `--light_direction`: 光照方向，可选值：top, top_left, top_right, left, right, front, front_top, dramatic
+- `--ambient_strength`: 环境光强度，默认0.8
+- `--diffuse_strength`: 漫反射强度，默认1.5
+- `--sam`: 是否使用SAM模型进行背景移除，默认false
+- `--backbone`: 选择使用的模型骨架，可选值：Img2Img, Inpaint
 
-```bibtex
-@misc{asoul2025,
-  title={Asoul: Masked Attention-Guided Diffusion Inpainting for Precise Style Transfer},
-  author={Jackey and 清辉夜凝love},
-  year={2025},
-  url={https://github.com/jackeyloveseven/Asoul},
-  note={Custom attention processors for spatially-controlled style injection}
+### 配置文件使用
+
+也可以通过配置文件设置参数：
+
+```bash
+python SynergyFrame.py --config config.json
+```
+
+配置文件示例 (config.json):
+```json
+{
+  "obj": "5",
+  "texture": "5",
+  "input_dir": "demo_assets/input_imgs/",
+  "texture_dir": "demo_assets/material_exemplars/",
+  "depth_dir": "demo_assets/depths",
+  "output_file": "synergy_output.png",
+  "light_direction": "right",
+  "ambient_strength": 0.8,
+  "diffuse_strength": 1.5,
+  "use_cuda": true,
+  "use_mixed_precision": false,
+  "use_fp16": false,
+  "use_xformers": true,
+  "sam": false,
+  "backbone": "Img2Img"
 }
 ```
 
-## 🤝 Acknowledgements
+## 项目结构
 
-- **Stable Diffusion XL** - Foundation diffusion model
-- **IP-Adapter** - Image prompt conditioning architecture  
-- **DepthAnything V2** - Robust monocular depth estimation
-- **Diffusers** - Unified pipeline framework
+- `SynergyFrame.py`: 主程序
+- `ip_adapter/`: IP-Adapter相关模块
+- `depth_anything_v2/`: 深度估计模型
+- `Geometry_Estimating.py`: 几何估计和光照模拟模块
+- `demo_assets/`: 示例资源
+  - `input_imgs/`: 输入图像
+  - `material_exemplars/`: 材质示例
+  - `depths/`: 深度图输出目录
 
----
+## 示例
 
-<div align="center">
+输入物体图像：
+![输入物体](demo_assets/input_imgs/5.png)
 
-**🌟 Star this repo if our masked attention approach inspires your research!**
+材质示例：
+![材质示例](demo_assets/material_exemplars/5.png)
 
-</div>
+输出结果：
+![输出结果](synergy_output.png)
+
+## 许可证
+
+MIT

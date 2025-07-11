@@ -19,7 +19,7 @@ class MultiScaleDepthEnhancement:
                  depth_gaussian_kernel=(11, 11),
                  depth_gaussian_sigma=3,
                  depth_valid_range=(5, 250),
-                 feature_weights=(0.008, 0.008, 0.6)):
+                 featureweights=(1, 1, 1)):
         """
         Initialize the MSDEM module.
         
@@ -46,7 +46,7 @@ class MultiScaleDepthEnhancement:
             'valid_range': depth_valid_range
         }
         
-        self.feature_weights = feature_weights
+        self.feature_weights = (featureweights[0]/100, featureweights[1]/100, featureweights[2]/100)
         
         # 定义 Sobel 和 Laplacian 核
         self.sobel_x = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=np.float32)

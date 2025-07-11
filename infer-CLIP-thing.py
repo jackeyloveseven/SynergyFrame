@@ -1,7 +1,7 @@
 from diffusers import StableDiffusionXLControlNetInpaintPipeline, ControlNetModel
 from rembg import remove, new_session
 import torch
-from ip_adapter import IPAdapterXL, selfutils
+from ip_adapter import IPAdapterXL,utils
 from ip_adapter.utils import register_cross_attention_hook, get_net_attn_map, attnmaps2images
 from PIL import Image, ImageChops, ImageEnhance
 import numpy as np
@@ -161,6 +161,7 @@ depth_map = Image.fromarray(np_image).resize((1024,1024))
 
 init_img = init_img.resize((1024,1024))
 mask = target_mask.resize((1024, 1024))
+mask.save("mask.png")
 grid = image_grid([target_mask.resize((256, 256)), ip_image.resize((256, 256)), init_img.resize((256, 256)), depth_map.resize((256, 256))], 1, 4)
 
 # Visualize each input individually
@@ -169,5 +170,5 @@ init_img.resize((256, 256)).save("init.png")
 
 
 num_samples = 1
-images = ip_model.generate(pil_image=ip_image, image=init_img, control_image=depth_map, mask_image=mask, controlnet_conditioning_scale=0.9, num_samples=num_samples, num_inference_steps=30, seed=42)
+images = ip_model.generate(pil_image=ip_image, image=init_img, control_image=depth_map, mask_image=mask, controlnet_conditioning_scale=0.9, num_samples=num_samples,prompt='with text"Citizen"', num_inference_steps=30, seed=42)
 images[0].save("output.png")

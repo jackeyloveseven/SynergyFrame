@@ -2,13 +2,11 @@
 # -*- coding: utf-8 -*-
 
 import os
-import glob
 import json
 import numpy as np
 import cv2
 import torch
 import argparse
-import matplotlib
 import warnings
 import logging
 from PIL import Image
@@ -26,7 +24,7 @@ logging.getLogger("cv2").setLevel(logging.ERROR)
 
 from rembg import remove, new_session
 from diffusers import StableDiffusionXLControlNetImg2ImgPipeline, ControlNetModel, StableDiffusionXLControlNetInpaintPipeline
-from transformers import SamModel
+from transformers import SamModel, SamProcessor
 
 # 导入自定义模块
 from ip_adapter.custom_ip_adapter2 import IPAdapterCustom
@@ -114,10 +112,8 @@ def parse_args(config_dict=None):
     parser.add_argument('--ambient_strength', type=float, default=config_dict['ambient_strength'], help='环境光强度')
     parser.add_argument('--diffuse_strength', type=float, default=config_dict['diffuse_strength'], help='漫反射强度')
     
-    # CUDA加速配置 - 直接从config_dict读取，不再提供命令行参数
-    # 这些参数只能通过config.json配置文件修改
-
-    parser.add_argument('--backbone', type=str, default=config_dict['backbone'], choices=['StableDiffusionXLControlNetImg2ImgPipeline', 'StableDiffusionXLControlNetInpaintPipeline'])
+    parser.add_argument('--sam', type=bool, default=config_dict['sam'], help='是否使用SAM模型')
+    parser.add_argument('--backbone', type=str, default=config_dict['backbone'], choices=['Img2Img', 'Inpaint'])
     
     return parser.parse_args()
 
@@ -155,7 +151,7 @@ class DepthEstimator:
         self.depth_enhancer = MultiScaleDepthEnhancement(
             edge_low_threshold=50,
             edge_high_threshold=150,
-            feature_weights=(0.01, 0.01, 0.01)
+            featureweights=(1, 1, 1)
         )
         
     def estimate_depth(self, image_path, output_dir):
@@ -276,6 +272,80 @@ class ImageProcessor:
         
         return mask
     
+    def remove_background_with_sam(self, image):
+        """
+        使用SAM模型移除图像背景
+        
+        参数:
+            image: 输入图像 (PIL.Image)
+            
+        返回:
+            mask: 物体遮罩 (PIL.Image)
+        """
+        # 初始化SAM模型（可以在类初始化时完成）
+        if not hasattr(self, 'sam_model'):
+            self.sam_model = SamModel.from_pretrained("facebook/sam-vit-base").to('cuda' if torch.cuda.is_available() else 'cpu')
+            self.sam_processor = SamProcessor.from_pretrained("facebook/sam-vit-base")
+        
+        # 自动生成中心点作为提示点
+        width, height = image.size
+        center_point = [[width // 2, height // 2]]  # 图像中心点
+        
+        # 处理图像并生成遮罩
+        inputs = self.sam_processor(image, input_points=[center_point], return_tensors="pt").to(self.sam_model.device)
+        with torch.no_grad():
+            outputs = self.sam_model(**inputs)
+        
+        # 后处理获取遮罩
+        masks = self.sam_processor.image_processor.post_process_masks(
+            outputs.pred_masks.cpu(), 
+            inputs["original_sizes"].cpu(), 
+            inputs["reshaped_input_sizes"].cpu()
+        )
+        
+        # 获取IoU分数
+        iou_scores = outputs.iou_scores.cpu().numpy()
+        
+        # 选择最佳遮罩（通常是具有最高IoU分数的掩码）
+        best_mask_idx = np.argmax(iou_scores[0][0])
+        mask = masks[0][0][best_mask_idx].numpy()
+        
+        # 计算掩码的面积和位置
+        mask_area = np.sum(mask)
+        total_area = mask.shape[0] * mask.shape[1]
+        
+        # 如果掩码面积太小或太大，可能不是主体，尝试使用其他方法选择
+        if mask_area < 0.05 * total_area or mask_area > 0.95 * total_area:
+            # 计算每个掩码的中心距离图像中心的距离
+            mask_centers = []
+            for i in range(len(masks[0][0])):
+                m = masks[0][0][i].numpy()
+                # 计算掩码的质心
+                y_indices, x_indices = np.where(m)
+                if len(y_indices) > 0 and len(x_indices) > 0:
+                    center_y = np.mean(y_indices)
+                    center_x = np.mean(x_indices)
+                    # 计算到图像中心的距离
+                    distance = np.sqrt((center_y - height/2)**2 + (center_x - width/2)**2)
+                    area = len(y_indices)
+                    mask_centers.append((i, distance, area))
+            
+            # 根据距离和面积选择最佳掩码
+            if mask_centers:
+                # 按距离排序
+                mask_centers.sort(key=lambda x: x[1])
+                # 选择距离最近且面积适中的掩码
+                for idx, dist, area in mask_centers:
+                    if 0.05 * total_area < area < 0.95 * total_area:
+                        best_mask_idx = idx
+                        mask = masks[0][0][idx].numpy()
+                        break
+        
+        # 转换为PIL图像并返回
+        mask_image = Image.fromarray((mask * 255).astype(np.uint8)).convert('L').convert('RGB')
+        
+        return mask_image
+
     def create_image_grid(self, images, rows, cols):
         """
         创建图像网格
@@ -308,7 +378,7 @@ def main():
     ip_ckpt = "sdxl_models/ip-adapter_sdxl_vit-h.bin"
     controlnet_path = "diffusers/controlnet-depth-sdxl-1.0"
     
-    # 深度模型配置
+    #深度模型配置
     depth_model = "vitb"
     depth_ckpt = "checkpoints/depth_anything_v2_vitb.pth"
     input_size = 518
@@ -331,6 +401,7 @@ def main():
     
     # 解析命令行参数（命令行参数优先级高于配置文件）
     args = parse_args(config_dict)
+    args.sam = config_dict.get('sam', False)
     
     # 从config_dict直接读取CUDA相关参数
     args.use_cuda = config_dict.get('use_cuda', True)
@@ -406,7 +477,10 @@ def main():
     # print(f"原始图像尺寸: {original_width}x{original_height}, 宽高比: {original_aspect_ratio:.2f}")
     # print(f"目标输出尺寸: {target_width}x{target_height}")
     
-    target_mask = image_processor.remove_background(target_image)
+    if args.sam:
+        target_mask = image_processor.remove_background_with_sam(target_image)
+    else:
+        target_mask = image_processor.remove_background(target_image)
     
     # 初始化光照模拟器
     lighting_simulator = LightingSimulator(
@@ -515,7 +589,7 @@ def main():
         controlnet_conditioning_scale=controlnet_scale,
         num_samples=num_samples,
         num_inference_steps=num_steps,
-        seed=seed
+        seed=seed,
     )
     
     # 将生成的图像调整为原始图像的宽高比

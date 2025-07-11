@@ -1,0 +1,6 @@
+include README.md
+include LICENSE
+include requirements.txt
+include config.json
+recursive-include demo_assets *
+global-exclude *.py[cod] __pycache__ *.so *.dylib 

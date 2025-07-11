@@ -1,0 +1,37 @@
+from setuptools import setup, find_packages
+
+setup(
+    name="SynergyFrame",
+    version="0.1.0",
+    description="材质与物体融合系统",
+    author="SynergyFrame Team",
+    author_email="14865916@qq.com",
+    packages=find_packages(),
+    install_requires=[
+        "numpy>=1.19.0",
+        "opencv-python>=4.5.0",
+        "torch>=1.10.0",
+        "torchvision>=0.11.0",
+        "pillow>=9.0.0",
+        "matplotlib>=3.4.0",
+        "diffusers>=0.24.0",
+        "transformers>=4.30.0",
+        "rembg>=2.0.0",
+        "safetensors>=0.3.0",
+        "accelerate>=0.20.0",
+        "xformers>=0.0.20",
+        "timm>=0.6.0",
+        "huggingface-hub>=0.14.0",
+        "tqdm>=4.65.0",
+        "scikit-image>=0.19.0",
+    ],
+    python_requires=">=3.8",
+    classifiers=[
+        "Development Status :: 3 - Alpha",
+        "Intended Audience :: Developers",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
+    ],
+) 

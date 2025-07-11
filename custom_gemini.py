@@ -70,7 +70,7 @@ for k, filename in enumerate(filenames):
     msdem = MultiScaleDepthEnhancement(
         edge_low_threshold=50,
         edge_high_threshold=150,
-        feature_weights=(0.01, 0.01, 0.01)
+        featureweights=(1, 1, 1)
     )
 
     # 一行代码完成增强
