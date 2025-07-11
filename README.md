@@ -1,4 +1,4 @@
-# SynergyFrame: A Unified Framework for Photorealistic Local Stylization
+# SynergyFrame: Orchestrating Control Signals for Photorealistic Stylization
 
 <div align="center">
 
@@ -113,20 +113,14 @@ SynergyFrame enhances two primary workflows.
 #### 1. Empowered Inpainting (Text-Guided)
 This workflow leverages strong geometric and boundary constraints, now enhanced with powerful style injection via SSA.
 ```bash
-# Example usage (please adapt to your actual script)
-python infer-text.py \
-    --object_id '5' \
-    --texture_ref 'cup_glaze.png' \
-    --prompt "a photo of a {object} with {style} texture"
+python SynergyFrame.py --backbone='Inpaint'
+
 ```
 
 #### 2. Empowered Image-to-Image (Style-Reference-Guided)
 This workflow offers greater creative freedom, with SSA preventing style leakage and artifacts.
 ```bash
-# Example usage (please adapt to your actual script)
-python genmini.py \
-    --object_name 'nike' \
-    --style_ref 'cup_glaze.png'
+python SynergyFrame.py --backbone='Img2Img'
 ```
 
 ## 📊 Results: From Conflict to Synergy
