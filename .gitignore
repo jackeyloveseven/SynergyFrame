@@ -19,15 +19,3 @@ __pycache__/
 StyleBench/*
 demo_assets/texture/*
 
-infer-text.py
-infer-inverse.py
-infer-CLIP-thing.py
-infer-CLIP-thing_trial.py
-genmini.py
-gemini-text.py
-custom_gemini2.py
-custom_gemini.py
-config copy.json
-注意力思路.txt
-attention_processor.py
-visualization_results.html

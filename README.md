@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-1.12%2B-red)](https://pytorch.org/)
 [![Diffusers](https://img.shields.io/badge/🤗%20Diffusers-0.21%2B-yellow)](https://github.com/huggingface/diffusers)
-[![License](https://img.shields.io/github/license/jackeyloveseven/SynergyFrame)](https://github.com/jackeyloveseven/SynergyFrame/blob/main/LICENSE)
+[![License](https://img.shields.io/github/license/jackeyloveseven/SynergyFrame)](https://github.com/jackeyloveseven/SynergyFrame/LICENSE)
 
 **Synergizing Geometry, Lighting, and Style for High-Fidelity Texture Generation**
 
