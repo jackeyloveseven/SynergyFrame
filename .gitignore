@@ -31,3 +31,9 @@ config copy.json
 注意力思路.txt
 attention_processor.py
 visualization_results.html
+SCORE.py
+input_preview.png
+input.png
+init.png
+synergy_output.png
+output.png
