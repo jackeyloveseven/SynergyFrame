@@ -112,8 +112,12 @@ def parse_args(config_dict=None):
     parser.add_argument('--ambient_strength', type=float, default=config_dict['ambient_strength'], help='环境光强度')
     parser.add_argument('--diffuse_strength', type=float, default=config_dict['diffuse_strength'], help='漫反射强度')
     
-    parser.add_argument('--sam', type=bool, default=config_dict['sam'], help='是否使用SAM模型')
-    parser.add_argument('--backbone', type=str, default=config_dict['backbone'], choices=['Img2Img', 'Inpaint'])
+    parser.add_argument('--sam', type=bool, default=config_dict.get('sam', False), help='是否使用SAM模型')
+    parser.add_argument('--backbone', type=str, default=config_dict.get('backbone', 'Inpaint'), choices=['Img2Img', 'Inpaint'])
+    
+    # 添加手动蒙版相关参数
+    parser.add_argument('--use_manual_mask', type=bool, default=config_dict.get('use_manual_mask', False), help='是否使用手动绘制的蒙版')
+    parser.add_argument('--mask_path', type=str, default=config_dict.get('mask_path', ''), help='手动绘制蒙版的路径')
     
     return parser.parse_args()
 
@@ -129,7 +133,7 @@ class DepthEstimator:
         'vitg': {'encoder': 'vitg', 'features': 384, 'out_channels': [1536, 1536, 1536, 1536]}
     }
     
-    def __init__(self, model_type, checkpoint_path, device, input_size=518):
+    def __init__(self, model_type, checkpoint_path, device, featureweights, input_size=518):
         """
         初始化深度估计器
         
@@ -151,7 +155,7 @@ class DepthEstimator:
         self.depth_enhancer = MultiScaleDepthEnhancement(
             edge_low_threshold=50,
             edge_high_threshold=150,
-            featureweights=(1, 1, 1)
+            featureweights=featureweights
         )
         
     def estimate_depth(self, image_path, output_dir):
@@ -383,13 +387,6 @@ def main():
     depth_ckpt = "checkpoints/depth_anything_v2_vitb.pth"
     input_size = 518
     
-    # 生成配置
-    num_samples = 1
-    num_steps = 30
-    seed = 3704
-    # seed = 42
-    controlnet_scale = 0.9
-    
     # CUDA配置 - 这些将被命令行或配置文件的值覆盖
     
     # 解析命令行参数（首先获取配置文件路径）
@@ -402,13 +399,20 @@ def main():
     # 解析命令行参数（命令行参数优先级高于配置文件）
     args = parse_args(config_dict)
     args.sam = config_dict.get('sam', False)
+    args.use_manual_mask = config_dict.get('use_manual_mask', False)
+    args.mask_path = config_dict.get('mask_path', '')
     
     # 从config_dict直接读取CUDA相关参数
     args.use_cuda = config_dict.get('use_cuda', True)
     args.use_mixed_precision = config_dict.get('use_mixed_precision', True)
     args.use_fp16 = config_dict.get('use_fp16', True)
     args.use_xformers = config_dict.get('use_xformers', True)
-    
+    featureweights = [config_dict.get('featureweights1', 1), config_dict.get('featureweights2', 1), config_dict.get('featureweights3', 1)]
+    # 生成配置
+    num_samples = config_dict.get('num_samples', 1)
+    num_steps = config_dict.get('num_steps', 30)
+    seed = config_dict.get('seed', 3704)
+    controlnet_scale = config_dict.get('controlnet_scale', 0.9)
     # 设置设备
     if args.use_cuda and torch.cuda.is_available():
         device = 'cuda'
@@ -441,13 +445,14 @@ def main():
             texture_image_path = os.path.join(args.texture_dir, file)
             break
 
-    
+
     # 初始化深度估计器
     depth_estimator = DepthEstimator(
         depth_model, 
         depth_ckpt, 
         device, 
-        input_size
+        input_size=input_size,
+        featureweights=featureweights
     )
     
     # 估计深度
@@ -477,9 +482,15 @@ def main():
     # print(f"原始图像尺寸: {original_width}x{original_height}, 宽高比: {original_aspect_ratio:.2f}")
     # print(f"目标输出尺寸: {target_width}x{target_height}")
     
-    if args.sam:
+    # 处理蒙版：优先使用手动蒙版，其次使用SAM或自动分割
+    if args.use_manual_mask and os.path.exists(args.mask_path):
+        print(f"使用手动绘制的蒙版: {args.mask_path}")
+        target_mask = Image.open(args.mask_path).convert('RGB')
+    elif args.sam:
+        print("使用SAM进行分割")
         target_mask = image_processor.remove_background_with_sam(target_image)
     else:
+        print("使用自动分割")
         target_mask = image_processor.remove_background(target_image)
     
     # 初始化光照模拟器
@@ -576,7 +587,7 @@ def main():
         ip_ckpt, 
         device, 
         target_blocks=["up_blocks.0.attentions.1", "down_blocks.2.attentions.1"], 
-        top_k=8
+        top_k=config_dict.get('top_k', 8)
     )
     
     # 生成图像
@@ -590,6 +601,7 @@ def main():
         num_samples=num_samples,
         num_inference_steps=num_steps,
         seed=seed,
+        prompt=config_dict.get('prompt')
     )
     
     # 将生成的图像调整为原始图像的宽高比

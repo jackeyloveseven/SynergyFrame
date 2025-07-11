@@ -1,20 +1,28 @@
 {
-  "obj": "pinkw",
-  "texture": "Photographic_00",
-  "input_dir": "demo_assets/input_imgs",
-  "texture_dir": "StyleBench/style",
-  "depth_dir": "demo_assets/depths",
-  "output_file": "synergy_output.png",
-  "light_direction": "dramatic",
-  "ambient_strength": 0.8,
-  "diffuse_strength": 0.4,
+  "obj": "taylor",
+  "texture": "waterart",
+  "input_dir": "data/content",
+  "texture_dir": "data/style",
+  "depth_dir": "data/depths",
+  "output_file": "output_1752236282.png",
+  "light_direction": "right",
+  "ambient_strength": 1.1,
+  "diffuse_strength": 1.3,
   "use_cuda": true,
   "use_mixed_precision": true,
   "use_fp16": true,
   "use_xformers": true,
-  "backbone": "Inpaint",
-  "sam": false
-} 
-
-
-
+  "backbone": "Img2Img",
+  "sam": true,
+  "top_k": 20,
+  "num_samples": 1,
+  "num_steps": 30,
+  "seed": 3704,
+  "controlnet_scale": 1.1,
+  "prompt": "",
+  "featureweights1": 1.0,
+  "featureweights2": 1.0,
+  "featureweights3": 1.0,
+  "mask_path": "temp_masks/manual_mask_1752236110.png",
+  "use_manual_mask": false
+}
