@@ -46,7 +46,6 @@ class MultiScaleDepthEnhancement:
             'valid_range': depth_valid_range
         }
         
-        print(featureweights)
         self.feature_weights = [i/100 for i in featureweights]
         
         # 定义 Sobel 和 Laplacian 核

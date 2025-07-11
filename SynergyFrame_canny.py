@@ -380,7 +380,7 @@ def main():
     base_model_path = "stabilityai/stable-diffusion-xl-base-1.0"
     image_encoder_path = "models/image_encoder"
     ip_ckpt = "sdxl_models/ip-adapter_sdxl_vit-h.bin"
-    controlnet_path = "diffusers/controlnet-depth-sdxl-1.0"
+    controlnet_path = "diffusers/controlnet-canny-sdxl-1.0"
     
     #深度模型配置
     depth_model = "vitb"
@@ -512,6 +512,7 @@ def main():
     
     # 直接使用enhanced_depth，避免重新打开文件
     depth_map = Image.fromarray(enhanced_depth).resize((1024, 1024))
+    canny_img = Image.fromarray(cv2.Canny(np.array(init_img), 100, 200)).resize((1024, 1024))
     
     # 调整图像大小
     init_img = init_img.resize((1024, 1024))
@@ -523,7 +524,7 @@ def main():
             target_mask.resize((256, 256)), 
             texture_image.resize((256, 256)), 
             init_img.resize((256, 256)), 
-            depth_map.resize((256, 256))
+            canny_img.resize((256, 256))
         ], 
         1, 
         4
@@ -593,9 +594,9 @@ def main():
     # 生成图像
     images = ip_model.generate(
         pil_image=texture_image,
-        image=init_img,
-        control_image=depth_map,
+        control_image=canny_img,
         mask_image=mask,
+        image=init_img,
         spatial_mask=target_mask,
         controlnet_conditioning_scale=controlnet_scale,
         num_samples=num_samples,

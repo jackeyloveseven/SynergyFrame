@@ -37,7 +37,7 @@ def save_config(config_dict, config_path='config.json'):
 
 # 运行SynergyFrame
 def run_synergyframe(config_path='config.json'):
-    subprocess.run([sys.executable, "SynergyFrame.py", "--config", config_path])
+    subprocess.run([sys.executable,load_config(config_path).get('model'), "--config", config_path])
     output_file = load_config(config_path).get('output_file', 'synergy_output.png')
     return output_file, "input_preview.png"
 
@@ -226,13 +226,13 @@ def process_sam_with_points(image, points, labels):
 def update_config(obj, texture, backbone, light_direction, ambient_strength, diffuse_strength, 
                  use_sam, num_steps, controlnet_scale, prompt, seed, top_k,
                  feature_weight1, feature_weight2, feature_weight3,
-                 custom_obj=None, custom_texture=None, sketch_canvas=None):
+                 custom_obj=None, custom_texture=None, sketch_canvas=None, scale=None):
     
     config = load_config()
     
     # 默认路径
     default_input_dir = 'data/content'
-    default_texture_dir = 'data/style'
+    default_texture_dir = 'data/texture'
     
     # 处理自定义图像
     if custom_obj is not None and hasattr(custom_obj, 'name'):
@@ -301,6 +301,7 @@ def update_config(obj, texture, backbone, light_direction, ambient_strength, dif
     config['featureweights1'] = float(feature_weight1)
     config['featureweights2'] = float(feature_weight2)
     config['featureweights3'] = float(feature_weight3)
+    config['scale'] = float(scale)
     
     # 生成唯一的输出文件名
     timestamp = int(time.time())
@@ -316,13 +317,13 @@ def update_config(obj, texture, backbone, light_direction, ambient_strength, dif
 def generate(obj, texture, backbone, light_direction, ambient_strength, diffuse_strength, 
              use_sam, num_steps, controlnet_scale, prompt, seed, top_k,
              feature_weight1, feature_weight2, feature_weight3,
-             custom_obj=None, custom_texture=None, sketch_canvas=None):
+             custom_obj=None, custom_texture=None, sketch_canvas=None, scale=None):
     
     # 更新配置
     config = update_config(obj, texture, backbone, light_direction, ambient_strength, diffuse_strength,
                  use_sam, num_steps, controlnet_scale, prompt, seed, top_k,
                  feature_weight1, feature_weight2, feature_weight3,
-                 custom_obj, custom_texture, sketch_canvas)
+                 custom_obj, custom_texture, sketch_canvas, scale)
     
     # 运行SynergyFrame
     try:
@@ -442,6 +443,11 @@ with gr.Blocks(title="SynergyFrame演示", theme=gr.themes.Soft()) as demo:
                     value=initial_config.get('top_k', 8),
                     label="Top-K注意力"
                 )
+                scale = gr.Slider(
+                    minimum=0.1, maximum=2.0, step=0.1,
+                    value=initial_config.get('scale', 1.0),
+                    label="Scale"
+                )
                 
                 with gr.Row():
                     feature_weight1 = gr.Slider(
@@ -485,7 +491,7 @@ with gr.Blocks(title="SynergyFrame演示", theme=gr.themes.Soft()) as demo:
                     # 蒙版预览
                     mask_preview = gr.Image(
                         label="蒙版预览",
-                        height=500
+                        height=280
                     )
                     
                     # 添加预览按钮
@@ -580,7 +586,7 @@ with gr.Blocks(title="SynergyFrame演示", theme=gr.themes.Soft()) as demo:
             light_direction, ambient_strength, diffuse_strength,
             use_sam, num_steps, controlnet_scale, prompt, seed, top_k,
             feature_weight1, feature_weight2, feature_weight3,
-            custom_obj_upload, custom_texture_upload, sketch_canvas
+            custom_obj_upload, custom_texture_upload, sketch_canvas, scale
         ],
         outputs=[result_image, preview_grid]
     )
