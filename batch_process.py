@@ -23,8 +23,8 @@ config = load_config()
 # 配置参数
 input_dir = config.get('input_dir', 'demo_assets/input_imgs')
 texture_dir = config.get('texture_dir', 'demo_assets/texture')
-output_dir = config.get('output_dir', 'batch_outputs/')
-
+output_dir =  'batch_outputs4/'
+model = config.get('model','SynergyFrame.py')
 # 确保路径末尾有斜杠
 if not input_dir.endswith('/'):
     input_dir += '/'
@@ -73,7 +73,7 @@ for obj in objs:
         
         # 构建命令 - 只传递obj、texture和output_file参数
         cmd = [
-            "python", "SynergyFrame.py",
+            "python", model,
             "--obj", obj,
             "--texture", texture,
             "--output_file", output_file

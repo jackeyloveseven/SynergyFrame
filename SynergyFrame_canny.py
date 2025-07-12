@@ -23,7 +23,7 @@ warnings.filterwarnings("ignore", message="It seems like you have activated mode
 logging.getLogger("cv2").setLevel(logging.ERROR)
 
 from rembg import remove, new_session
-from diffusers import StableDiffusionXLControlNetImg2ImgPipeline, ControlNetModel, StableDiffusionXLControlNetInpaintPipeline
+from diffusers import StableDiffusionXLControlNetImg2ImgPipeline, ControlNetModel, StableDiffusionXLControlNetInpaintPipeline, AutoencoderKL
 from transformers import SamModel, SamProcessor
 
 # 导入自定义模块
@@ -349,6 +349,14 @@ class ImageProcessor:
         mask_image = Image.fromarray((mask * 255).astype(np.uint8)).convert('L').convert('RGB')
         
         return mask_image
+    
+    def donot_remove(self, image):
+        """
+        不移除背景
+        """
+        white = np.full(image.size, 255, dtype=np.uint8)
+        mask_image = Image.fromarray((white))
+        return mask_image
 
     def create_image_grid(self, images, rows, cols):
         """
@@ -401,7 +409,7 @@ def main():
     args.sam = config_dict.get('sam', False)
     args.use_manual_mask = config_dict.get('use_manual_mask', False)
     args.mask_path = config_dict.get('mask_path', '')
-    
+    args.donot_remove = config_dict.get('donot_remove', False)
     # 从config_dict直接读取CUDA相关参数
     args.use_cuda = config_dict.get('use_cuda', True)
     args.use_mixed_precision = config_dict.get('use_mixed_precision', True)
@@ -483,7 +491,10 @@ def main():
     # print(f"目标输出尺寸: {target_width}x{target_height}")
     
     # 处理蒙版：优先使用手动蒙版，其次使用SAM或自动分割
-    if args.use_manual_mask and os.path.exists(args.mask_path):
+    if args.donot_remove:
+        print("不移除背景")
+        target_mask = image_processor.donot_remove(target_image)
+    elif args.use_manual_mask and os.path.exists(args.mask_path):
         print(f"使用手动绘制的蒙版: {args.mask_path}")
         target_mask = Image.open(args.mask_path).convert('RGB')
     elif args.sam:
