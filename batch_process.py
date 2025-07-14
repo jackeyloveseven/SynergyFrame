@@ -23,7 +23,7 @@ config = load_config()
 # 配置参数
 input_dir = config.get('input_dir', 'demo_assets/input_imgs')
 texture_dir = config.get('texture_dir', 'demo_assets/texture')
-output_dir =  'batch_outputs4/'
+output_dir =  'batch_outputs4444/'
 model = config.get('model','SynergyFrame.py')
 # 确保路径末尾有斜杠
 if not input_dir.endswith('/'):

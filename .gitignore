@@ -23,6 +23,9 @@ __pycache__/
 /batch_outputs
 /batch_outputs2
 /batch_outputs3
+/batch_outputs4
+/batch_outputs44
+/batch_outputs4444
 
 infer-text.py
 infer-inverse.py

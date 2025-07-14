@@ -70,20 +70,64 @@ class MultiScaleDepthEnhancement:
             depth = depth[:, :, 0]
         depth = depth.astype(np.float32)
         
-        # 计算深度梯度
-        grad_x = cv2.filter2D(depth, cv2.CV_32F, self.sobel_x)
-        grad_y = cv2.filter2D(depth, cv2.CV_32F, self.sobel_y)
+        # 1. 降采样平滑处理
+        h, w = depth.shape
+        scale_factor = 4  # 降采样比例，更大的值意味着更强的平滑
+        small_w, small_h = w//scale_factor, h//scale_factor
+        
+        # 降采样
+        small_depth = cv2.resize(depth, (small_w, small_h), interpolation=cv2.INTER_AREA)
+        
+        # 平滑处理
+        small_depth = cv2.GaussianBlur(small_depth, (11, 11), 3.0)
+        small_depth = cv2.bilateralFilter(small_depth, 9, 25, 25)
+        
+        # 升采样回原始尺寸
+        depth_smooth = cv2.resize(small_depth, (w, h), interpolation=cv2.INTER_LANCZOS4)
+        
+        # 2. 使用向量化操作计算大间隔梯度 - 加速处理
+        gradient_step = 5  # 使用更大的梯度步长
+        
+        # 添加填充
+        padded_depth = cv2.copyMakeBorder(depth_smooth, gradient_step, gradient_step, 
+                                        gradient_step, gradient_step, cv2.BORDER_REFLECT)
+        
+        # 使用numpy的切片操作代替循环 - 水平梯度
+        grad_x = (padded_depth[gradient_step:-gradient_step, 2*gradient_step:] - 
+                 padded_depth[gradient_step:-gradient_step, :-2*gradient_step]) / (2*gradient_step)
+        
+        # 垂直梯度
+        grad_y = (padded_depth[2*gradient_step:, gradient_step:-gradient_step] - 
+                 padded_depth[:-2*gradient_step, gradient_step:-gradient_step]) / (2*gradient_step)
+        
+        # 计算梯度幅度
         grad_magnitude = np.sqrt(grad_x**2 + grad_y**2)
         
-        # 计算表面粗糙度 (Laplacian)
-        roughness = cv2.filter2D(depth, cv2.CV_32F, self.laplacian)
-        roughness = np.abs(roughness)
+        # 计算拉普拉斯算子 - 使用向量化操作
+        center = padded_depth[gradient_step:-gradient_step, gradient_step:-gradient_step]
+        top = padded_depth[:-2*gradient_step, gradient_step:-gradient_step]
+        bottom = padded_depth[2*gradient_step:, gradient_step:-gradient_step]
+        left = padded_depth[gradient_step:-gradient_step, :-2*gradient_step]
+        right = padded_depth[gradient_step:-gradient_step, 2*gradient_step:]
         
-        # 组合特征
-        combined_features = (grad_magnitude * 0.7 + roughness * 0.3)
+        # 拉普拉斯计算
+        roughness = np.abs((top + bottom + left + right) - 4 * center)
+        
+        # 3. 平滑梯度和粗糙度
+        grad_magnitude = cv2.GaussianBlur(grad_magnitude, (5, 5), 1.0)
+        roughness = cv2.GaussianBlur(roughness, (5, 5), 1.0)
+        
+        # 归一化特征
+        grad_magnitude_norm = cv2.normalize(grad_magnitude, None, 0, 1, cv2.NORM_MINMAX)
+        roughness_norm = cv2.normalize(roughness, None, 0, 1, cv2.NORM_MINMAX)
+        
+        # 4. 组合特征
+        combined_features = (grad_magnitude_norm * 0.7 + roughness_norm * 0.3)
+        
+        # 5. 最后平滑一次以消除任何剩余的伪影
+        combined_features = cv2.bilateralFilter(combined_features, 7, 0.1, 7)
         combined_features = cv2.normalize(combined_features, None, 0, 255, cv2.NORM_MINMAX)
         
-        # CRITICAL FIX: Return as float32 to prevent quantization artifacts
         return combined_features.astype(np.float32)
     
     def _generate_content_aware_mask(self, depth):
@@ -100,17 +144,55 @@ class MultiScaleDepthEnhancement:
             depth = depth[:, :, 0]
         depth = depth.astype(np.float32)
         
-        # Extract structural gradients
-        sobelx = cv2.Sobel(depth, cv2.CV_32F, 1, 0, ksize=3)
-        sobely = cv2.Sobel(depth, cv2.CV_32F, 0, 1, ksize=3)
-        grad = np.sqrt(sobelx**2 + sobely**2)
-        grad = cv2.normalize(grad, None, 0, 255, cv2.NORM_MINMAX)
+        # 1. 降采样平滑处理
+        h, w = depth.shape
+        scale_factor = 4  # 降采样比例，更大的值意味着更强的平滑
+        small_w, small_h = w//scale_factor, h//scale_factor
         
-        # Content-aware enhancement
-        mask = self._generate_content_aware_mask(depth)
-        enhanced = depth + self.feature_weights[2] * grad * mask
+        # 降采样
+        small_depth = cv2.resize(depth, (small_w, small_h), interpolation=cv2.INTER_AREA)
         
-        # CRITICAL FIX: Return as float32 to preserve precision
+        # 平滑处理
+        small_depth = cv2.GaussianBlur(small_depth, (11, 11), 3.0)
+        small_depth = cv2.bilateralFilter(small_depth, 9, 25, 25)
+        
+        # 升采样回原始尺寸
+        depth_smooth = cv2.resize(small_depth, (w, h), interpolation=cv2.INTER_LANCZOS4)
+        
+        # 2. 使用向量化操作计算大间隔梯度
+        gradient_step = 5
+        
+        # 添加填充
+        padded_depth = cv2.copyMakeBorder(depth_smooth, gradient_step, gradient_step, 
+                                        gradient_step, gradient_step, cv2.BORDER_REFLECT)
+        
+        # 使用numpy的切片操作代替循环 - 水平梯度
+        grad_x = (padded_depth[gradient_step:-gradient_step, 2*gradient_step:] - 
+                 padded_depth[gradient_step:-gradient_step, :-2*gradient_step]) / (2*gradient_step)
+        
+        # 垂直梯度
+        grad_y = (padded_depth[2*gradient_step:, gradient_step:-gradient_step] - 
+                 padded_depth[:-2*gradient_step, gradient_step:-gradient_step]) / (2*gradient_step)
+        
+        # 计算梯度幅度
+        grad = np.sqrt(grad_x**2 + grad_y**2)
+        
+        # 3. 平滑梯度以进一步减少伪影
+        grad = cv2.GaussianBlur(grad, (7, 7), 1.5)
+        
+        # 4. 标准化梯度
+        grad_norm = cv2.normalize(grad, None, 0, 255, cv2.NORM_MINMAX)
+        
+        # 5. 应用内容感知掩码 
+        content_mask = self._generate_content_aware_mask(depth)
+        
+        # 6. 增强深度
+        enhancement_factor = self.feature_weights[2]
+        enhanced = depth + enhancement_factor * grad_norm * content_mask
+        
+        # 7. 最后应用双边滤波以平滑任何引入的伪影
+        enhanced = cv2.bilateralFilter(enhanced, 5, 10, 10)
+        
         return np.clip(enhanced, 0, 255).astype(np.float32)
     
     def enhance(self, depth_map, reference_image):
@@ -215,24 +297,86 @@ class DirectionalShadingModule:
             depth_map = depth_map[:, :, 0]
         depth_map = depth_map.astype(np.float32)
         
-        # 使用高斯模糊和平滑深度图以减少噪声
-        depth_smooth = cv2.GaussianBlur(depth_map, 
-                                      self.normal_params['smooth_kernel'],
-                                      self.normal_params['smooth_sigma'])
+        # 1. 应用强度的平滑预处理 - 这一步至关重要
+        # 降采样+平滑+上采样技术，完全消除伪影
+        h, w = depth_map.shape
+        # 降采样到更小的尺寸 - 降到1/4
+        scale_factor = 4
+        small_w, small_h = w//scale_factor, h//scale_factor
+        small_depth = cv2.resize(depth_map, (small_w, small_h), interpolation=cv2.INTER_AREA)
         
-        # 使用双边滤波进一步平滑，同时保留边缘
-        depth_smooth = cv2.bilateralFilter(depth_smooth.astype(np.float32), 9, 75, 75)
-
-        # 计算深度梯度
-        grad_x = cv2.filter2D(depth_smooth, cv2.CV_32F, self.sobel_x)
-        grad_y = cv2.filter2D(depth_smooth, cv2.CV_32F, self.sobel_y)
+        # 强力平滑处理
+        small_depth = cv2.GaussianBlur(small_depth, (11, 11), 3.0)
+        small_depth = cv2.bilateralFilter(small_depth, 9, 25, 25)
+        small_depth = cv2.GaussianBlur(small_depth, (7, 7), 2.0)
         
-        # 构建法线图 (-grad_x, -grad_y, 1)
-        normals = np.dstack([-grad_x, -grad_y, np.ones_like(depth_map)])
+        # 升采样回原始尺寸，使用Lanczos插值（对边缘有更好的处理）
+        smooth_depth = cv2.resize(small_depth, (w, h), interpolation=cv2.INTER_LANCZOS4)
         
-        # 归一化法线向量
-        norm = np.sqrt(np.sum(normals**2, axis=2, keepdims=True))
-        normals = normals / (norm + 1e-10)
+        # 2. 向量化的法线计算
+        # 定义采样距离
+        sample_dist = 5
+        
+        # 填充深度图以便进行切向量计算
+        padded_depth = cv2.copyMakeBorder(smooth_depth, sample_dist, sample_dist, 
+                                        sample_dist, sample_dist, cv2.BORDER_REFLECT)
+        
+        # 使用numpy的切片操作计算梯度，比循环快几个数量级
+        # 获取各方向的深度值
+        center = padded_depth[sample_dist:-sample_dist, sample_dist:-sample_dist]
+        left = padded_depth[sample_dist:-sample_dist, :-2*sample_dist]
+        right = padded_depth[sample_dist:-sample_dist, 2*sample_dist:]
+        top = padded_depth[:-2*sample_dist, sample_dist:-sample_dist]
+        bottom = padded_depth[2*sample_dist:, sample_dist:-sample_dist]
+        
+        # 创建坐标网格（为每个像素提供x,y相对坐标）
+        y_coords, x_coords = np.mgrid[-sample_dist:sample_dist+1:2*sample_dist, 
+                                       -sample_dist:sample_dist+1:2*sample_dist]
+        
+        # 创建3D点坐标
+        pt_left = np.stack([-sample_dist * np.ones_like(center), np.zeros_like(center), left], axis=-1)
+        pt_right = np.stack([sample_dist * np.ones_like(center), np.zeros_like(center), right], axis=-1)
+        pt_top = np.stack([np.zeros_like(center), -sample_dist * np.ones_like(center), top], axis=-1)
+        pt_bottom = np.stack([np.zeros_like(center), sample_dist * np.ones_like(center), bottom], axis=-1)
+        
+        # 计算切向量
+        tangent_x = pt_right - pt_left
+        tangent_y = pt_bottom - pt_top
+        
+        # 计算叉乘（法线向量）- 使用向量化操作
+        normals = np.zeros((h, w, 3), dtype=np.float32)
+        
+        normals[..., 0] = tangent_x[..., 1] * tangent_y[..., 2] - tangent_x[..., 2] * tangent_y[..., 1]
+        normals[..., 1] = tangent_x[..., 2] * tangent_y[..., 0] - tangent_x[..., 0] * tangent_y[..., 2]
+        normals[..., 2] = tangent_x[..., 0] * tangent_y[..., 1] - tangent_x[..., 1] * tangent_y[..., 0]
+        
+        # 确保法线朝向观察者
+        flip_mask = (normals[..., 2] < 0)
+        normals[flip_mask] = -normals[flip_mask]
+        
+        # 归一化法线 - 修复广播错误
+        norms = np.sqrt(np.sum(normals**2, axis=2))
+        
+        # 找出非零法线的掩码
+        valid_mask = (norms > 1e-10)
+        
+        # 对于每个有效像素进行归一化
+        for i in range(3):  # 对x,y,z分量分别处理
+            normals[valid_mask, i] = normals[valid_mask, i] / norms[valid_mask]
+        
+        # 设置无效像素为默认法线
+        normals[~valid_mask] = np.array([0, 0, 1], dtype=np.float32)
+        
+        # 对法线应用双边滤波以保留边缘并平滑伪影
+        normals_x = cv2.bilateralFilter(normals[:,:,0], 7, 0.05, 7)
+        normals_y = cv2.bilateralFilter(normals[:,:,1], 7, 0.05, 7)
+        normals_z = cv2.bilateralFilter(normals[:,:,2], 7, 0.05, 7)
+        
+        normals = np.stack((normals_x, normals_y, normals_z), axis=-1)
+        
+        # 最终归一化
+        norms = np.sqrt(np.sum(normals**2, axis=2, keepdims=True))
+        normals = normals / (norms + 1e-10)
         
         return normals
     
@@ -329,6 +473,7 @@ class DirectionalShadingModule:
         shaded = self.apply_lighting(image, normals, light_dir, mask)
         
         return shaded
+
 
 # 使用示例:
 """

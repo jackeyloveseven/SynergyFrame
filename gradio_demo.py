@@ -93,7 +93,18 @@ def load_image_to_sketch(image_path):
         return None
     try:
         if isinstance(image_path, str):
-            return Image.open(image_path).convert('RGB')
+            img = Image.open(image_path).convert('RGB')
+            # 保持原始比例，但确保图片不会太大
+            max_size = 1024
+            width, height = img.size
+            if width > height:
+                new_width = max_size
+                new_height = int(height * max_size / width)
+            else:
+                new_height = max_size
+                new_width = int(width * max_size / height)
+            img = img.resize((new_width, new_height), Image.LANCZOS)
+            return img
         else:
             return image_path
     except Exception as e:
@@ -231,8 +242,8 @@ def update_config(obj, texture, backbone, light_direction, ambient_strength, dif
     config = load_config()
     
     # 默认路径
-    default_input_dir = 'data/content'
-    default_texture_dir = 'data/texture'
+    default_input_dir = 'data/cnt'
+    default_texture_dir = 'data/sty'
     
     # 处理自定义图像
     if custom_obj is not None and hasattr(custom_obj, 'name'):
@@ -416,7 +427,7 @@ with gr.Blocks(title="SynergyFrame演示", theme=gr.themes.Soft()) as demo:
             with gr.Accordion("高级设置", open=False):
                 use_sam = gr.Checkbox(
                     value=initial_config.get('sam', False),
-                    label="使用SAM进行分割"
+                    label="使用SAM进行分割（记得config中蒙版设置为false）"
                 )
                 num_steps = gr.Slider(
                     minimum=20, maximum=100, step=1,
@@ -478,7 +489,9 @@ with gr.Blocks(title="SynergyFrame演示", theme=gr.themes.Soft()) as demo:
                     sketch_canvas = gr.ImageMask(
                         label="绘制蒙版区域",
                         brush_radius=20,
-                        height=500,
+                        height=750,
+                        width=750,
+                        scale=1,
                         interactive=True
                     )
                     
@@ -503,6 +516,8 @@ with gr.Blocks(title="SynergyFrame演示", theme=gr.themes.Soft()) as demo:
                         label="点击前景/背景点",
                         tool="sketch", 
                         height=750,
+                        width=750,
+                        scale=1,
                         interactive=True
                     )
                     
@@ -517,8 +532,8 @@ with gr.Blocks(title="SynergyFrame演示", theme=gr.themes.Soft()) as demo:
                         sam_generate_btn = gr.Button("生成SAM蒙版")
             
             gr.Markdown("### 结果")
-            result_image = gr.Image(label="生成结果", height=750)
-            preview_grid = gr.Image(label="输入预览", height=180)
+            result_image = gr.Image(label="生成结果", height=750, width=750, scale=1)
+            preview_grid = gr.Image(label="输入预览", height=250, width=750, scale=1)
     
     # 设置标签切换事件处理
     preset_tab.select(

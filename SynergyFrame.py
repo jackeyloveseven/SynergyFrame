@@ -278,7 +278,7 @@ class ImageProcessor:
     
     def remove_background_with_sam(self, image):
         """
-        使用SAM模型移除图像背景
+        使用SAM模型移除图像背景，采用automatic mask生成方式
         
         参数:
             image: 输入图像 (PIL.Image)
@@ -291,12 +291,16 @@ class ImageProcessor:
             self.sam_model = SamModel.from_pretrained("facebook/sam-vit-base").to('cuda' if torch.cuda.is_available() else 'cpu')
             self.sam_processor = SamProcessor.from_pretrained("facebook/sam-vit-base")
         
-        # 自动生成中心点作为提示点
+        # 获取图像尺寸
         width, height = image.size
-        center_point = [[width // 2, height // 2]]  # 图像中心点
+        
+        # 自动生成中心点作为提示点
+        center_point = [[[width // 2, height // 2]]]  # 图像中心点
         
         # 处理图像并生成遮罩
-        inputs = self.sam_processor(image, input_points=[center_point], return_tensors="pt").to(self.sam_model.device)
+        inputs = self.sam_processor(image, input_points=center_point, return_tensors="pt").to(self.sam_model.device)
+        
+        # 运行模型
         with torch.no_grad():
             outputs = self.sam_model(**inputs)
         
@@ -308,53 +312,26 @@ class ImageProcessor:
         )
         
         # 获取IoU分数
-        iou_scores = outputs.iou_scores.cpu().numpy()
+        scores = outputs.iou_scores.cpu().numpy()
         
-        # 选择最佳遮罩（通常是具有最高IoU分数的掩码）
-        best_mask_idx = np.argmax(iou_scores[0][0])
+        # 选择最佳遮罩（具有最高IoU分数的掩码）
+        best_mask_idx = np.argmax(scores[0][0])
         mask = masks[0][0][best_mask_idx].numpy()
         
-        # 计算掩码的面积和位置
-        mask_area = np.sum(mask)
-        total_area = mask.shape[0] * mask.shape[1]
-        
-        # 如果掩码面积太小或太大，可能不是主体，尝试使用其他方法选择
-        if mask_area < 0.05 * total_area or mask_area > 0.95 * total_area:
-            # 计算每个掩码的中心距离图像中心的距离
-            mask_centers = []
-            for i in range(len(masks[0][0])):
-                m = masks[0][0][i].numpy()
-                # 计算掩码的质心
-                y_indices, x_indices = np.where(m)
-                if len(y_indices) > 0 and len(x_indices) > 0:
-                    center_y = np.mean(y_indices)
-                    center_x = np.mean(x_indices)
-                    # 计算到图像中心的距离
-                    distance = np.sqrt((center_y - height/2)**2 + (center_x - width/2)**2)
-                    area = len(y_indices)
-                    mask_centers.append((i, distance, area))
-            
-            # 根据距离和面积选择最佳掩码
-            if mask_centers:
-                # 按距离排序
-                mask_centers.sort(key=lambda x: x[1])
-                # 选择距离最近且面积适中的掩码
-                for idx, dist, area in mask_centers:
-                    if 0.05 * total_area < area < 0.95 * total_area:
-                        best_mask_idx = idx
-                        mask = masks[0][0][idx].numpy()
-                        break
-        
         # 转换为PIL图像并返回
-        mask_image = Image.fromarray((mask * 255).astype(np.uint8)).convert('L').convert('RGB')
+        mask_image = Image.fromarray((mask * 255).astype(np.uint8)).convert("RGB").point(lambda x: 0 if x < 1 else 255).convert('L').convert('RGB')
         return mask_image
 
     def donot_remove(self, image):
         """
-        不移除背景
+        不移除背景，创建全白蒙版
         """
-        white = np.full(image.size, 255, dtype=np.uint8)
-        mask_image = Image.fromarray((white))
+        # 创建与图像大小相同的全白图像
+        width, height = image.size
+        white_array = np.ones((height, width, 3), dtype=np.uint8) * 255
+        
+        # 使用与其他蒙版处理一致的方式处理全白蒙版
+        mask_image = Image.fromarray(white_array).convert("RGB").point(lambda x: 0 if x < 1 else 255).convert('L').convert('RGB')
         return mask_image
     
     def create_image_grid(self, images, rows, cols):
