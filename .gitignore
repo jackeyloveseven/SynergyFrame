@@ -9,7 +9,7 @@ models/*
 # 忽略 checkpoints 目录下的所有内容，但保留目录结构
 checkpoints/*
 !checkpoints/.gitkeep
-newvae/*
+
 
 # 忽略所有 __pycache__ 目录
 __pycache__/
@@ -31,7 +31,7 @@ __pycache__/
 /batch_outputs6prompt
 /copy
 /semanticimage
-
+/newvae
 
 
 infer-text.py
