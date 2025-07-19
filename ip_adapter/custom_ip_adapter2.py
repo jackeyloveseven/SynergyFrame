@@ -9,7 +9,7 @@ from safetensors import safe_open
 from transformers import CLIPImageProcessor, CLIPVisionModelWithProjection
 
 from .utils import is_torch2_available, get_generator
-from ip_adapter.custom_attention_processor import SemanticMaskedStyleAttnProcessor, IPAttnProcessor2_0, CNAttnProcessor2_0, AttnProcessor2_0 as AttnProcessor
+from ip_adapter.custom_attention_processor2 import SemanticMaskedStyleAttnProcessor, IPAttnProcessor2_0, CNAttnProcessor2_0, AttnProcessor2_0 as AttnProcessor
 from .resampler import Resampler
 
 

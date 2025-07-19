@@ -26,6 +26,13 @@ __pycache__/
 /batch_outputs4
 /batch_outputs44
 /batch_outputs4444
+/batch_outputs44444
+/batch_outputs6prompt
+/copy
+/data/depths
+/semanticimage
+
+
 
 infer-text.py
 infer-inverse.py

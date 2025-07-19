@@ -9,7 +9,15 @@ from safetensors import safe_open
 from transformers import CLIPImageProcessor, CLIPVisionModelWithProjection
 
 from .utils import is_torch2_available, get_generator
-from ip_adapter.custom_attention_processor import SemanticMaskedStyleAttnProcessor, IPAttnProcessor2_0, CNAttnProcessor2_0, AttnProcessor2_0 as AttnProcessor
+# ----------------- MODIFICATION START -----------------
+# Import the new SemanticClipAttnProcessor and the base AttnProcessor
+from ip_adapter.custom_attention_processor import (
+    SemanticClipAttnProcessor, 
+    IPAttnProcessor2_0, 
+    CNAttnProcessor2_0, 
+    AttnProcessor2_0 as AttnProcessor
+)
+# ----------------- MODIFICATION END -----------------
 from .resampler import Resampler
 
 
@@ -53,7 +61,7 @@ class MLPProjModel(torch.nn.Module):
 
 class IPAdapter:
     def __init__(self, sd_pipe, image_encoder_path, ip_ckpt, device, num_tokens=4, target_blocks=["block"]):
-        self.device = device
+        self.device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
         self.image_encoder_path = image_encoder_path
         self.ip_ckpt = ip_ckpt
         self.num_tokens = num_tokens
@@ -158,7 +166,7 @@ class IPAdapter:
 
     def set_scale(self, scale):
         for attn_processor in self.pipe.unet.attn_processors.values():
-            if isinstance(attn_processor, IPAttnProcessor2_0):
+            if isinstance(attn_processor, (IPAttnProcessor2_0, SemanticClipAttnProcessor)):
                 attn_processor.scale = scale
 
     def generate(
@@ -261,9 +269,9 @@ class IPAdapterXL(IPAdapter):
             if neg_content_prompt is not None:
                 with torch.inference_mode():
                     (
-                        prompt_embeds_, # torch.Size([1, 77, 2048])
+                        prompt_embeds_,
                         negative_prompt_embeds_,
-                        pooled_prompt_embeds_, # torch.Size([1, 1280])
+                        pooled_prompt_embeds_,
                         negative_pooled_prompt_embeds_,
                     ) = self.pipe.encode_prompt(
                         neg_content_prompt,
@@ -317,6 +325,14 @@ class IPAdapterXL(IPAdapter):
 class IPAdapterCustom(IPAdapterXL):
     """IP-Adapter with custom attention processor."""
 
+    # ----------------- MODIFICATION START -----------------
+    def __init__(self, sd_pipe, image_encoder_path, ip_ckpt, device, num_tokens=4, target_blocks=["block"], semantic_scale=0.5):
+        self.semantic_scale = semantic_scale
+        # Pass arguments to the parent class constructor
+        super().__init__(sd_pipe, image_encoder_path, ip_ckpt, device, num_tokens, target_blocks)
+    # ----------------- MODIFICATION END -----------------
+
+    # ----------------- MODIFICATION START -----------------
     def set_ip_adapter(self):
         unet = self.pipe.unet
         attn_procs = {}
@@ -330,23 +346,27 @@ class IPAdapterCustom(IPAdapterXL):
             elif name.startswith("down_blocks"):
                 block_id = int(name[len("down_blocks.")])
                 hidden_size = unet.config.block_out_channels[block_id]
+            
             if cross_attention_dim is None:
                 attn_procs[name] = AttnProcessor()
             else:
-                selected = False
-                for block_name in self.target_blocks:
-                    if block_name in name:
-                        selected = True
-                        break
+                selected = any(block_name in name for block_name in self.target_blocks)
                 if selected:
-                    attn_procs[name] = SemanticMaskedStyleAttnProcessor(
+                    # Instantiate the new SemanticClipAttnProcessor
+                    proc = SemanticClipAttnProcessor(
                         hidden_size=hidden_size,
                         cross_attention_dim=cross_attention_dim,
                         scale=1.0,
                         num_tokens=self.num_tokens,
+                        semantic_scale=self.semantic_scale,
                     ).to(self.device, dtype=torch.float16)
+                    
+                    # Inject the CLIP models from the pipeline
+                    proc.set_clip_models(self.pipe.text_encoder, self.pipe.tokenizer)
+                    
+                    attn_procs[name] = proc
                 else:
-                    # We use the standard IPAttnProcessor for non-targeted blocks
+                    # Use the standard IPAttnProcessor for non-targeted blocks, but keep them skipped
                     attn_procs[name] = IPAttnProcessor2_0(
                         hidden_size=hidden_size,
                         cross_attention_dim=cross_attention_dim,
@@ -354,13 +374,16 @@ class IPAdapterCustom(IPAdapterXL):
                         num_tokens=self.num_tokens,
                         skip=True
                     ).to(self.device, dtype=torch.float16)
+                    
         unet.set_attn_processor(attn_procs)
+        
         if hasattr(self.pipe, "controlnet"):
             if isinstance(self.pipe.controlnet, MultiControlNetModel):
                 for controlnet in self.pipe.controlnet.nets:
                     controlnet.set_attn_processor(CNAttnProcessor2_0(num_tokens=self.num_tokens))
             else:
                 self.pipe.controlnet.set_attn_processor(CNAttnProcessor2_0(num_tokens=self.num_tokens))
+    # ----------------- MODIFICATION END -----------------
 
     def generate(
         self,
@@ -379,13 +402,14 @@ class IPAdapterCustom(IPAdapterXL):
     ):
         # Set the spatial mask for all relevant attention processors
         for attn_proc in self.pipe.unet.attn_processors.values():
-            if isinstance(attn_proc, SemanticMaskedStyleAttnProcessor):
+            if isinstance(attn_proc, SemanticClipAttnProcessor):
                 if spatial_mask:
                     attn_proc.set_spatial_mask(spatial_mask)
                 else:
                     attn_proc.clear_spatial_mask()
 
-        return super().generate(
+        # Call the parent generate method
+        return super(IPAdapterCustom, self).generate(
             pil_image=pil_image,
             prompt=prompt,
             negative_prompt=negative_prompt,
@@ -398,3 +422,4 @@ class IPAdapterCustom(IPAdapterXL):
             neg_content_scale=neg_content_scale,
             **kwargs,
         )
+

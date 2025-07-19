@@ -23,7 +23,7 @@ warnings.filterwarnings("ignore", message="It seems like you have activated mode
 logging.getLogger("cv2").setLevel(logging.ERROR)
 
 from rembg import remove, new_session
-from diffusers import StableDiffusionXLControlNetImg2ImgPipeline, ControlNetModel, StableDiffusionXLControlNetInpaintPipeline, AutoencoderKL
+from diffusers import StableDiffusionXLControlNetImg2ImgPipeline, ControlNetModel, StableDiffusionXLControlNetInpaintPipeline
 from transformers import SamModel, SamProcessor
 
 # 导入自定义模块
@@ -501,8 +501,9 @@ def main():
     
     # 调整图像大小
     init_img = init_img.resize((1024, 1024))
+    init_img.save("init_img.png")
     mask = target_mask.resize((1024, 1024))
-    
+    mask.save("mask.png")
     # 创建输入预览
     grid = image_processor.create_image_grid(
         [
@@ -537,6 +538,8 @@ def main():
         'Img2Img': StableDiffusionXLControlNetImg2ImgPipeline,
         'Inpaint': StableDiffusionXLControlNetInpaintPipeline
     }
+
+
     # 加载SDXL管道
     pipe = choice_backbone[args.backbone].from_pretrained(
         base_model_path,
@@ -545,6 +548,7 @@ def main():
         torch_dtype=torch_dtype,
         add_watermarker=False,
     ).to(device)
+
 
     # 启用内存优化
     if device == 'cuda':
@@ -572,10 +576,12 @@ def main():
         image_encoder_path, 
         ip_ckpt, 
         device, 
-        target_blocks=["up_blocks.0.attentions.1", "down_blocks.2.attentions.1"], 
+        target_blocks=["up_blocks.0.attentions.1","down_blocks.2.attentions.1"], 
         top_k=config_dict.get('top_k', 8)
     )
-    
+    # 语义："down_blocks.2.attentions.1","down_blocks.3.attentions.0"
+    # 纹理："up_blocks.0.attentions.1","up_blocks.1.attentions.0"
+
     # 生成图像
     images = ip_model.generate(
         pil_image=texture_image,
