@@ -23,7 +23,7 @@ warnings.filterwarnings("ignore", message="It seems like you have activated mode
 logging.getLogger("cv2").setLevel(logging.ERROR)
 
 from rembg import remove, new_session
-from diffusers import StableDiffusionXLControlNetImg2ImgPipeline, ControlNetModel, StableDiffusionXLControlNetInpaintPipeline
+from diffusers import StableDiffusionXLControlNetImg2ImgPipeline, ControlNetModel, StableDiffusionXLControlNetInpaintPipeline, AutoencoderKL, StableDiffusionXLControlNetPipeline
 from transformers import SamModel, SamProcessor
 
 # 导入自定义模块
@@ -536,7 +536,8 @@ def main():
     
     choice_backbone = {
         'Img2Img': StableDiffusionXLControlNetImg2ImgPipeline,
-        'Inpaint': StableDiffusionXLControlNetInpaintPipeline
+        'Inpaint': StableDiffusionXLControlNetInpaintPipeline,
+        'T2I': StableDiffusionXLControlNetPipeline
     }
 
 

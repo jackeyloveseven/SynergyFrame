@@ -23,11 +23,11 @@ warnings.filterwarnings("ignore", message="It seems like you have activated mode
 logging.getLogger("cv2").setLevel(logging.ERROR)
 
 from rembg import remove, new_session
-from diffusers import StableDiffusionXLControlNetImg2ImgPipeline, ControlNetModel, StableDiffusionXLControlNetInpaintPipeline, AutoencoderKL, StableDiffusionXLControlNetPipeline
+from diffusers import StableDiffusionXLControlNetPipeline, StableDiffusionXLControlNetImg2ImgPipeline, ControlNetModel, StableDiffusionXLControlNetInpaintPipeline
 from transformers import SamModel, SamProcessor
 
 # 导入自定义模块
-from ip_adapter.custom_ip_adapter2 import IPAdapterCustom
+from ip_adapter.custom_ip_adapter3 import IPAdapterCustom
 from ip_adapter.utils import register_cross_attention_hook, get_net_attn_map, attnmaps2images
 from depth_anything_v2.dpt import DepthAnythingV2
 from Geometry_Estimating import MultiScaleDepthEnhancement, DirectionalShadingModule
@@ -278,7 +278,7 @@ class ImageProcessor:
     
     def remove_background_with_sam(self, image):
         """
-        使用SAM模型移除图像背景
+        使用SAM模型移除图像背景，采用automatic mask生成方式
         
         参数:
             image: 输入图像 (PIL.Image)
@@ -291,12 +291,16 @@ class ImageProcessor:
             self.sam_model = SamModel.from_pretrained("facebook/sam-vit-base").to('cuda' if torch.cuda.is_available() else 'cpu')
             self.sam_processor = SamProcessor.from_pretrained("facebook/sam-vit-base")
         
-        # 自动生成中心点作为提示点
+        # 获取图像尺寸
         width, height = image.size
-        center_point = [[width // 2, height // 2]]  # 图像中心点
+        
+        # 自动生成中心点作为提示点
+        center_point = [[[width // 2, height // 2]]]  # 图像中心点
         
         # 处理图像并生成遮罩
-        inputs = self.sam_processor(image, input_points=[center_point], return_tensors="pt").to(self.sam_model.device)
+        inputs = self.sam_processor(image, input_points=center_point, return_tensors="pt").to(self.sam_model.device)
+        
+        # 运行模型
         with torch.no_grad():
             outputs = self.sam_model(**inputs)
         
@@ -308,56 +312,28 @@ class ImageProcessor:
         )
         
         # 获取IoU分数
-        iou_scores = outputs.iou_scores.cpu().numpy()
+        scores = outputs.iou_scores.cpu().numpy()
         
-        # 选择最佳遮罩（通常是具有最高IoU分数的掩码）
-        best_mask_idx = np.argmax(iou_scores[0][0])
+        # 选择最佳遮罩（具有最高IoU分数的掩码）
+        best_mask_idx = np.argmax(scores[0][0])
         mask = masks[0][0][best_mask_idx].numpy()
         
-        # 计算掩码的面积和位置
-        mask_area = np.sum(mask)
-        total_area = mask.shape[0] * mask.shape[1]
-        
-        # 如果掩码面积太小或太大，可能不是主体，尝试使用其他方法选择
-        if mask_area < 0.05 * total_area or mask_area > 0.95 * total_area:
-            # 计算每个掩码的中心距离图像中心的距离
-            mask_centers = []
-            for i in range(len(masks[0][0])):
-                m = masks[0][0][i].numpy()
-                # 计算掩码的质心
-                y_indices, x_indices = np.where(m)
-                if len(y_indices) > 0 and len(x_indices) > 0:
-                    center_y = np.mean(y_indices)
-                    center_x = np.mean(x_indices)
-                    # 计算到图像中心的距离
-                    distance = np.sqrt((center_y - height/2)**2 + (center_x - width/2)**2)
-                    area = len(y_indices)
-                    mask_centers.append((i, distance, area))
-            
-            # 根据距离和面积选择最佳掩码
-            if mask_centers:
-                # 按距离排序
-                mask_centers.sort(key=lambda x: x[1])
-                # 选择距离最近且面积适中的掩码
-                for idx, dist, area in mask_centers:
-                    if 0.05 * total_area < area < 0.95 * total_area:
-                        best_mask_idx = idx
-                        mask = masks[0][0][idx].numpy()
-                        break
-        
         # 转换为PIL图像并返回
-        mask_image = Image.fromarray((mask * 255).astype(np.uint8)).convert('L').convert('RGB')
-        
-        return mask_image
-    
-    def donot_remove(self, image):
-        """
-        不移除背景
-        """
-        white = np.full(image.size, 255, dtype=np.uint8)
-        mask_image = Image.fromarray((white))
+        mask_image = Image.fromarray((mask * 255).astype(np.uint8)).convert("RGB").point(lambda x: 0 if x < 1 else 255).convert('L').convert('RGB')
         return mask_image
 
+    def donot_remove(self, image):
+        """
+        不移除背景，创建全白蒙版
+        """
+        # 创建与图像大小相同的全白图像
+        width, height = image.size
+        white_array = np.ones((height, width, 3), dtype=np.uint8) * 255
+        
+        # 使用与其他蒙版处理一致的方式处理全白蒙版
+        mask_image = Image.fromarray(white_array).convert("RGB").point(lambda x: 0 if x < 1 else 255).convert('L').convert('RGB')
+        return mask_image
+    
     def create_image_grid(self, images, rows, cols):
         """
         创建图像网格
@@ -394,7 +370,6 @@ def main():
     depth_model = "vitb"
     depth_ckpt = "checkpoints/depth_anything_v2_vitb.pth"
     input_size = 518
-    
     # CUDA配置 - 这些将被命令行或配置文件的值覆盖
     
     # 解析命令行参数（首先获取配置文件路径）
@@ -524,11 +499,13 @@ def main():
     # 直接使用enhanced_depth，避免重新打开文件
     depth_map = Image.fromarray(enhanced_depth).resize((1024, 1024))
     canny_img = Image.fromarray(cv2.Canny(np.array(init_img), 100, 200)).resize((1024, 1024))
+
     
     # 调整图像大小
     init_img = init_img.resize((1024, 1024))
+    init_img.save("init_img.png")
     mask = target_mask.resize((1024, 1024))
-    
+    mask.save("mask.png")
     # 创建输入预览
     grid = image_processor.create_image_grid(
         [
@@ -564,6 +541,8 @@ def main():
         'Inpaint': StableDiffusionXLControlNetInpaintPipeline,
         'T2I': StableDiffusionXLControlNetPipeline
     }
+
+
     # 加载SDXL管道
     pipe = choice_backbone[args.backbone].from_pretrained(
         base_model_path,
@@ -572,7 +551,8 @@ def main():
         torch_dtype=torch_dtype,
         add_watermarker=False,
     ).to(device)
-    
+
+
     # 启用内存优化
     if device == 'cuda':
         if args.use_xformers:
@@ -599,16 +579,18 @@ def main():
         image_encoder_path, 
         ip_ckpt, 
         device, 
-        target_blocks=["up_blocks.0.attentions.1", "down_blocks.2.attentions.1"], 
-        top_k=config_dict.get('top_k', 8)
+        target_blocks=["down_blocks.2.attentions.1","up_blocks.0.attentions.1"],
+        semantic_scale=config_dict.get('semantic_scale', 0.5)
     )
-    
+    # 语义："down_blocks.2.attentions.1","down_blocks.3.attentions.0"
+    # 纹理："up_blocks.0.attentions.1","up_blocks.1.attentions.0"
+
     # 生成图像
     images = ip_model.generate(
         pil_image=texture_image,
         control_image=canny_img,
-        mask_image=mask,
         image=init_img,
+        mask_image=mask,
         spatial_mask=target_mask,
         controlnet_conditioning_scale=controlnet_scale,
         num_samples=num_samples,
