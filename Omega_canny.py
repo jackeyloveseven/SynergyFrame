@@ -23,11 +23,12 @@ warnings.filterwarnings("ignore", message="It seems like you have activated mode
 logging.getLogger("cv2").setLevel(logging.ERROR)
 
 from rembg import remove, new_session
-from diffusers import StableDiffusionXLControlNetPipeline, StableDiffusionXLControlNetImg2ImgPipeline, ControlNetModel, StableDiffusionXLControlNetInpaintPipeline
+from diffusers import StableDiffusionXLControlNetPipeline, ControlNetModel
+from diffusers.schedulers import DPMSolverMultistepScheduler
 from transformers import SamModel, SamProcessor
 
 # 导入自定义模块
-from ip_adapter.custom_ip_adapter3 import IPAdapterCustom
+from ip_adapter.custom_ip_adapter4 import IPAdapterCustom
 from ip_adapter.utils import register_cross_attention_hook, get_net_attn_map, attnmaps2images
 from depth_anything_v2.dpt import DepthAnythingV2
 from Geometry_Estimating import MultiScaleDepthEnhancement, DirectionalShadingModule
@@ -61,7 +62,12 @@ def load_config(config_path='config.json'):
         'use_cuda': True,  # 是否使用CUDA
         'use_mixed_precision': False,  # 是否使用混合精度
         'use_fp16': False,  # 是否使用半精度
-        'use_xformers': True  # 是否使用xformers内存优化
+        'use_xformers': True,  # 是否使用xformers内存优化
+
+        # 高级风格迁移配置
+        'scale': 0.5, # IP-Adapter强度，降低此值可减少内容泄露
+        'semantic_scale': 0.2, # 语义引导强度，降低此值可减少内容泄露
+        'latent_adain_scale': 0.5 # Latent AdaIN强度，主要负责色彩和纹理
     }
     
     # 尝试从文件加载配置
@@ -334,6 +340,7 @@ class ImageProcessor:
         mask_image = Image.fromarray(white_array).convert("RGB").point(lambda x: 0 if x < 1 else 255).convert('L').convert('RGB')
         return mask_image
     
+    
     def create_image_grid(self, images, rows, cols):
         """
         创建图像网格
@@ -356,6 +363,12 @@ class ImageProcessor:
             
         return grid
 
+def auto_canny(image, sigma=0.33):
+        median = np.median(image)
+        lower = int(max(0, (1.0 - sigma) * median))
+        upper = int(min(255, (1.0 + sigma) * median))
+        edged = cv2.Canny(image, lower, upper)
+        return edged
 
 def main():
     """主函数"""
@@ -495,11 +508,14 @@ def main():
     
     # 加载材质图像
     texture_image = Image.open(texture_image_path)
-    
-    # 直接使用enhanced_depth，避免重新打开文件
-    depth_map = Image.fromarray(enhanced_depth).resize((1024, 1024))
-    canny_img = Image.fromarray(cv2.Canny(np.array(init_img), 100, 200)).resize((1024, 1024))
 
+    # 为Canny ControlNet生成边缘图
+    print("为Canny ControlNet生成边缘图...")
+    target_image_np = np.array(target_image)
+
+    canny_edges = auto_canny(target_image_np)
+    canny_image = Image.fromarray(canny_edges).convert("RGB").resize((1024, 1024))
+    print("边缘图生成完毕。")
     
     # 调整图像大小
     init_img = init_img.resize((1024, 1024))
@@ -512,7 +528,7 @@ def main():
             target_mask.resize((256, 256)), 
             texture_image.resize((256, 256)), 
             init_img.resize((256, 256)), 
-            canny_img.resize((256, 256))
+            canny_image.resize((256, 256))
         ], 
         1, 
         4
@@ -535,22 +551,20 @@ def main():
         use_safetensors=True, 
         torch_dtype=torch_dtype
     ).to(device)
-    
-    choice_backbone = {
-        'Img2Img': StableDiffusionXLControlNetImg2ImgPipeline,
-        'Inpaint': StableDiffusionXLControlNetInpaintPipeline,
-        'T2I': StableDiffusionXLControlNetPipeline
-    }
-
 
     # 加载SDXL管道
-    pipe = choice_backbone[args.backbone].from_pretrained(
+    pipe = StableDiffusionXLControlNetPipeline.from_pretrained(
         base_model_path,
         controlnet=controlnet,
         use_safetensors=True,
         torch_dtype=torch_dtype,
         add_watermarker=False,
     ).to(device)
+
+    pipe.scheduler = DPMSolverMultistepScheduler.from_config(
+        pipe.scheduler.config,
+        use_karras_sigmas=True  # 关键参数：启用 Karras 版本
+    )
 
 
     # 启用内存优化
@@ -579,8 +593,12 @@ def main():
         image_encoder_path, 
         ip_ckpt, 
         device, 
-        target_blocks=["down_blocks.2.attentions.1","up_blocks.0.attentions.1"],
-        semantic_scale=config_dict.get('semantic_scale', 0.5)
+        # 扩大AdaIN作用范围，以更好地迁移全局色彩和风格
+        target_blocks=[
+            "up_blocks.0.attentions.1"
+        ],
+        semantic_scale=config_dict.get('semantic_scale'),
+        latent_adain_scale=config_dict.get('latent_adain_scale')
     )
     # 语义："down_blocks.2.attentions.1","down_blocks.3.attentions.0"
     # 纹理："up_blocks.0.attentions.1","up_blocks.1.attentions.0"
@@ -588,16 +606,17 @@ def main():
     # 生成图像
     images = ip_model.generate(
         pil_image=texture_image,
-        control_image=canny_img,
-        image=init_img,
+        negative_prompt= "text, watermark, lowres, low quality, worst quality, deformed, glitch, low contrast, noisy, saturation, blurry",
+        image=canny_image,
         mask_image=mask,
         spatial_mask=target_mask,
         controlnet_conditioning_scale=controlnet_scale,
         num_samples=num_samples,
         num_inference_steps=num_steps,
         seed=seed,
-        scale=config_dict.get('scale', 1.0),
-        prompt=config_dict.get('prompt')
+        scale=config_dict.get('scale'),
+        prompt=config_dict.get('prompt'),
+        guidance_scale=12.5
     )
     
     # 将生成的图像调整为原始图像的宽高比

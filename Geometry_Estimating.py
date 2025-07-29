@@ -1,5 +1,7 @@
 import numpy as np
 import cv2
+from scipy import ndimage
+from skimage import feature, filters, morphology
 
 class MultiScaleDepthEnhancement:
     """
@@ -195,43 +197,222 @@ class MultiScaleDepthEnhancement:
         
         return np.clip(enhanced, 0, 255).astype(np.float32)
     
+    def _extract_multi_scale_edges(self, image):
+        """
+        多尺度边缘检测 - 专门用于捕捉depth模型难以检测的细节
+        """
+        if image.ndim == 3:
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = image.copy()
+            
+        gray = gray.astype(np.float32) / 255.0
+        
+        # 多尺度边缘检测，专注于细节增强
+        edge_maps = []
+        scales = [0.8, 1.5, 3.0, 6.0]  # 更细致的尺度划分
+        
+        for scale in scales:
+            # 高斯平滑
+            sigma = scale * 0.6
+            smoothed = cv2.GaussianBlur(gray, (0, 0), sigma)
+            
+            # 增强的Canny边缘检测，使用更低的阈值捕捉更多细节
+            edges_canny = feature.canny(smoothed, sigma=sigma, low_threshold=0.05, high_threshold=0.15)
+            
+            # Sobel边缘检测
+            grad_x = cv2.filter2D(smoothed, -1, self.sobel_x)
+            grad_y = cv2.filter2D(smoothed, -1, self.sobel_y)
+            edges_sobel = np.sqrt(grad_x**2 + grad_y**2)
+            
+            # 拉普拉斯边缘检测，对细节敏感
+            edges_laplacian = np.abs(cv2.filter2D(smoothed, -1, self.laplacian))
+            
+            # 三种边缘检测的加权融合
+            combined_edges = (edges_canny.astype(np.float32) * 0.4 + 
+                            edges_sobel * 0.4 + 
+                            edges_laplacian * 0.2)
+            edge_maps.append(combined_edges)
+        
+        # 融合多尺度边缘，给细尺度更高权重
+        weights = np.array([0.4, 0.35, 0.2, 0.05])
+        multi_scale_edges = np.zeros_like(edge_maps[0])
+        
+        for i, edge_map in enumerate(edge_maps):
+            multi_scale_edges += weights[i] * edge_map
+            
+        return multi_scale_edges
+    
+    def _compute_structure_tensor_features(self, image):
+        """
+        计算结构张量特征 - 识别局部几何特征强度
+        """
+        if image.ndim == 3:
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = image.copy()
+            
+        gray = gray.astype(np.float32) / 255.0
+        
+        # 计算梯度
+        grad_x = cv2.filter2D(gray, -1, self.sobel_x)
+        grad_y = cv2.filter2D(gray, -1, self.sobel_y)
+        
+        # 结构张量分量
+        Ixx = grad_x * grad_x
+        Ixy = grad_x * grad_y
+        Iyy = grad_y * grad_y
+        
+        # 高斯加权
+        sigma = 1.5
+        Ixx = cv2.GaussianBlur(Ixx, (0, 0), sigma)
+        Ixy = cv2.GaussianBlur(Ixy, (0, 0), sigma)
+        Iyy = cv2.GaussianBlur(Iyy, (0, 0), sigma)
+        
+        # 计算特征值
+        trace = Ixx + Iyy
+        det = Ixx * Iyy - Ixy * Ixy
+        
+        # 避免除零
+        trace = np.maximum(trace, 1e-10)
+        
+        # 计算相干性和各向异性
+        coherence = (trace - 2 * np.sqrt(np.maximum(trace**2 - 4 * det, 0))) / trace
+        anisotropy = np.sqrt(np.maximum(trace**2 - 4 * det, 0)) / trace
+        
+        # 结合相干性和各向异性作为结构强度指标
+        structure_strength = coherence * anisotropy
+        
+        return structure_strength
+    
+    def _adaptive_contour_enhancement(self, depth_map, reference_image):
+        """
+        自适应轮廓增强 - 专门针对depth模型的弱点进行增强
+        """
+        if depth_map.ndim == 3:
+            depth = depth_map[:, :, 0].copy()
+        else:
+            depth = depth_map.copy()
+            
+        depth = depth.astype(np.float32)
+        
+        # 提取多尺度边缘特征
+        edge_features = self._extract_multi_scale_edges(reference_image)
+        
+        # 计算结构张量特征
+        structure_features = self._compute_structure_tensor_features(reference_image)
+        
+        # 计算深度梯度，识别当前深度图的弱点
+        depth_grad_x = cv2.filter2D(depth, -1, self.sobel_x)
+        depth_grad_y = cv2.filter2D(depth, -1, self.sobel_y)
+        depth_gradient_mag = np.sqrt(depth_grad_x**2 + depth_grad_y**2)
+        
+        # 归一化特征
+        edge_features = cv2.normalize(edge_features, None, 0, 1, cv2.NORM_MINMAX)
+        structure_features = cv2.normalize(structure_features, None, 0, 1, cv2.NORM_MINMAX)
+        depth_gradient_mag = cv2.normalize(depth_gradient_mag, None, 0, 1, cv2.NORM_MINMAX)
+        
+        # 计算增强权重：在图像有强结构但深度梯度弱的地方增强更多
+        enhancement_weight = (
+            edge_features * 2.0 +  # 边缘区域
+            structure_features * 1.5 +  # 结构强的区域
+            (1 - depth_gradient_mag) * 1.0  # 深度梯度弱的区域（需要增强的地方）
+        )
+        
+        # 平滑增强权重
+        enhancement_weight = cv2.GaussianBlur(enhancement_weight, (5, 5), 1.0)
+        
+        # 使用拉普拉斯算子检测需要增强的局部变化
+        laplacian_response = cv2.filter2D(depth, -1, self.laplacian)
+        laplacian_response = np.abs(laplacian_response)
+        
+        # 自适应阈值：基于图像内容动态调整
+        threshold = np.percentile(laplacian_response, 60) * 0.4
+        
+        # 创建增强掩码
+        enhancement_mask = (laplacian_response > threshold).astype(np.float32)
+        enhancement_mask = cv2.GaussianBlur(enhancement_mask, (3, 3), 0.5)
+        
+        # 应用增强 - 增强幅度根据特征权重调整
+        enhancement_amount = enhancement_weight * enhancement_mask * 25.0
+        enhanced_depth = depth + enhancement_amount
+        
+        return enhanced_depth
+
     def enhance(self, depth_map, reference_image):
         """
-        Enhance depth map using multi-scale feature fusion.
-        
+        通过引用图像的多尺度边缘特征来增强深度图。
+        这种方法可以更好地捕捉深度模型本身可能忽略的精细几何细节。
+
         Args:
-            depth_map (np.ndarray): Input depth map (H,W,3) or (H,W)
-            reference_image (np.ndarray): Reference RGB image (H,W,3)
-            
+            depth_map (np.ndarray): 输入深度图 (H,W,3) or (H,W)
+            reference_image (np.ndarray): 参考RGB图像 (H,W,3)
+
         Returns:
-            np.ndarray: Enhanced depth map as a float32 array to preserve precision.
+            np.ndarray: 增强后的深度图，为float32数组以保持精度。
         """
-        # Ensure depth map is in correct format
+        # 确保深度图格式正确
         if depth_map.ndim == 3:
             depth_map = depth_map[:, :, 0]
-        depth_map = depth_map.astype(np.float32)
+        original_depth = depth_map.astype(np.float32)
+
+        # 1. 对原始深度图进行平滑处理，以减少噪声，同时保留主要结构
+        smoothed_depth = cv2.bilateralFilter(original_depth, 9, 50, 50)
+
+        # 2. 从参考图像中提取详细的多尺度边缘特征
+        # 这些特征将指导深度增强
+        edge_features = self._extract_multi_scale_edges(reference_image)
         
-        # Extract multi-scale features
-        boundary_features = self._extract_boundary_features(reference_image)
-        gradient_features = self._compute_gradient_features(depth_map)
+        # 3. 将边缘特征归一化，用作增强图
+        enhancement_map = cv2.normalize(edge_features, None, 0, 1, cv2.NORM_MINMAX)
+
+        # 4. 定义增强强度
+        # 为保持一致性，使用 feature_weights[2]，但采用更直接的缩放因子。
+        enhancement_strength = self.feature_weights[2] * 20.0 # 这个因子可以调整
+
+        # 5. 计算增强量
+        # 增强与边缘强度成正比
+        enhancement_amount = enhancement_map * enhancement_strength
+
+        # 6. (可选) 应用内容感知蒙版，将增强限制在特定的深度范围内
+        content_mask = self._generate_content_aware_mask(original_depth)
+        enhancement_amount *= content_mask
+
+        # 7. 将增强量添加到平滑后的深度图中
+        enhanced_depth = smoothed_depth + enhancement_amount
+
+        # 8. 最终的一致性检查和裁剪
+        # 使用现有的 _preserve_depth_consistency 方法进行稳健的收尾
+        final_depth = self._preserve_depth_consistency(enhanced_depth, original_depth)
         
-        # Resize features to match depth map
-        boundary_features = cv2.resize(boundary_features, 
-                                     (depth_map.shape[1], depth_map.shape[0]))
-        gradient_features = cv2.resize(gradient_features.astype(np.float32), 
-                                    (depth_map.shape[1], depth_map.shape[0]))
+        final_depth = np.clip(final_depth, 0, 255)
+
+        # 打印一些调试信息
+        max_enhancement = np.max(enhancement_amount)
+        mean_enhancement = np.mean(enhancement_amount[enhancement_amount > 0]) if np.any(enhancement_amount > 0) else 0
         
-        # Multi-scale feature fusion
-        w1, w2, _ = self.feature_weights
-        enhanced_depth = depth_map * (1 - w1 - w2) + \
-                        w1 * boundary_features * 255 + \
-                        w2 * gradient_features
+        print(f"🔧 新的增强方法 - 最大增强: {max_enhancement:.2f}, 平均增强: {mean_enhancement:.2f}")
+
+        return final_depth.astype(np.float32)
+    
+    def _preserve_depth_consistency(self, enhanced_depth, original_depth):
+        """
+        保持深度一致性 - 确保增强后的深度图在空间上连贯
+        """
+        # 双边滤波保持边缘的同时平滑噪声
+        enhanced = cv2.bilateralFilter(enhanced_depth.astype(np.float32), 9, 40, 40)
         
-        # Final structure enhancement
-        enhanced_depth = self._enhance_local_structure(enhanced_depth)
+        # 限制增强幅度，避免过度增强
+        diff = enhanced - original_depth
+        max_enhancement = np.std(original_depth) * 0.6  # 限制增强幅度
+        diff = np.clip(diff, -max_enhancement, max_enhancement)
         
-        # The returned depth is now float32, preventing quantization.
-        return enhanced_depth
+        consistent_depth = original_depth + diff
+        
+        # 确保深度值在合理范围内
+        consistent_depth = np.clip(consistent_depth, 0, 255)
+        
+        return consistent_depth
 
 # 使用示例:
 """
@@ -256,8 +437,8 @@ class DirectionalShadingModule:
     """
     
     def __init__(self, 
-                 ambient_strength=0.4,
-                 diffuse_strength=0.7,
+                 ambient_strength=0.6,  # 提高环境光，减少阴影对比度
+                 diffuse_strength=0.5,  # 降低漫反射强度，避免过强阴影
                  normal_smooth_kernel=(7, 7),
                  normal_smooth_sigma=2.0,
                  shadow_softness=0.1):
@@ -382,7 +563,7 @@ class DirectionalShadingModule:
     
     def apply_lighting(self, image, normals, light_dir, mask=None):
         """
-        Apply directional lighting to the image.
+        Apply directional lighting to the image with improved shadow handling.
         
         Args:
             image (np.ndarray): Input RGB image (H,W,3)
@@ -400,14 +581,27 @@ class DirectionalShadingModule:
         # 计算漫反射项 (N·L)
         diffuse = np.sum(normals * light_dir, axis=2)
         
-        # 软化阴影过渡
-        diffuse = (diffuse + self.shadow_softness) / (1 + self.shadow_softness)
-        diffuse = np.clip(diffuse, 0, 1)
+        # 🔥 修复阴影问题：更好的阴影处理
+        # 1. 限制阴影的最暗程度，避免大片灰色阴影
+        min_shadow_level = 0.3  # 阴影最暗不超过30%
+        
+        # 2. 平滑阴影过渡，但保持更多细节
+        diffuse_smooth = cv2.GaussianBlur(diffuse, (5, 5), 1.0)
+        diffuse = diffuse * 0.7 + diffuse_smooth * 0.3  # 混合原始和平滑的漫反射
+        
+        # 3. 重新映射diffuse值，确保阴影不会太暗
+        diffuse = np.clip(diffuse, -1, 1)  # 确保在有效范围内
+        diffuse = (diffuse + 1) * 0.5  # 映射到[0,1]
+        diffuse = np.clip(diffuse, min_shadow_level, 1.0)  # 限制最暗程度
+        
         diffuse = diffuse[..., np.newaxis]
         
-        # 应用环境光和漫反射
+        # 4. 改进的光照模型：减少环境光，增强对比度
         ambient = np.ones_like(diffuse) * self.ambient_strength
-        shading = ambient + self.diffuse_strength * diffuse
+        
+        # 使用更自然的光照混合
+        shading = ambient + self.diffuse_strength * (diffuse - min_shadow_level) / (1 - min_shadow_level)
+        shading = np.clip(shading, min_shadow_level, 1.5)  # 允许一定程度的过曝，但限制阴影
         
         # 应用光照到图像
         shaded_image = image.astype(np.float32) * shading

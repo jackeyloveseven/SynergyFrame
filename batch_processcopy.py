@@ -23,7 +23,7 @@ config = load_config()
 # 配置参数
 input_dir = config.get('input_dir', 'demo_assets/input_imgs')
 texture_dir = config.get('texture_dir', 'demo_assets/texture')
-output_dir =  'copy/'
+output_dir =  'copy2/'
 model = config.get('model','SynergyFrame.py')
 # 确保路径末尾有斜杠
 if not input_dir.endswith('/'):
@@ -67,7 +67,7 @@ progress_bar = tqdm(total=total_combinations, desc="处理进度")
 
 # 批量处理
 for texture in textures:
-    obj = '18.png'
+    obj = '02.png'
     # 构建输出文件名
     output_file = os.path.join(output_dir, f"obj_{obj}_texture_{texture}.png")
     

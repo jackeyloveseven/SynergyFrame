@@ -32,7 +32,9 @@ __pycache__/
 /copy
 /semanticimage
 /newvae
-
+/results
+/oldway
+/copy2
 
 infer-text.py
 infer-inverse.py

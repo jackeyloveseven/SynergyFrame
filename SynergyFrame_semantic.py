@@ -23,11 +23,11 @@ warnings.filterwarnings("ignore", message="It seems like you have activated mode
 logging.getLogger("cv2").setLevel(logging.ERROR)
 
 from rembg import remove, new_session
-from diffusers import StableDiffusionXLControlNetImg2ImgPipeline, ControlNetModel, StableDiffusionXLControlNetInpaintPipeline, AutoencoderKL, StableDiffusionXLControlNetPipeline
+from diffusers import StableDiffusionXLControlNetPipeline, StableDiffusionXLControlNetImg2ImgPipeline, ControlNetModel, StableDiffusionXLControlNetInpaintPipeline
 from transformers import SamModel, SamProcessor
 
 # 导入自定义模块
-from ip_adapter.custom_ip_adapter import IPAdapterCustom
+from ip_adapter.custom_ip_adapter3 import IPAdapterCustom
 from ip_adapter.utils import register_cross_attention_hook, get_net_attn_map, attnmaps2images
 from depth_anything_v2.dpt import DepthAnythingV2
 from Geometry_Estimating import MultiScaleDepthEnhancement, DirectionalShadingModule
@@ -577,7 +577,8 @@ def main():
         image_encoder_path, 
         ip_ckpt, 
         device, 
-        target_blocks=["down_blocks.2.attentions.1","down_blocks.3.attentions.0","up_blocks.0.attentions.1","up_blocks.1.attentions.0"]
+        target_blocks=["down_blocks.2.attentions.1","down_blocks.3.attentions.0","up_blocks.0.attentions.1","up_blocks.1.attentions.0"],
+        semantic_scale=config_dict.get('semantic_scale', 0.5)
     )
     # 语义："down_blocks.2.attentions.1","down_blocks.3.attentions.0"
     # 纹理："up_blocks.0.attentions.1","up_blocks.1.attentions.0"
@@ -585,6 +586,7 @@ def main():
     # 生成图像
     images = ip_model.generate(
         pil_image=texture_image,
+        negative_prompt= "text, watermark, lowres, low quality, worst quality, deformed, glitch, low contrast, noisy, saturation, blurry",
         image=init_img,
         control_image=depth_map,
         mask_image=mask,
@@ -595,7 +597,8 @@ def main():
         seed=seed,
         scale=config_dict.get('scale', 1.0),
         prompt=config_dict.get('prompt'),
-        semantic_scale=config_dict.get('semantic_scale', 0.5)
+        guidance_scale=8.5,
+        strength= 0.8
     )
     
     # 将生成的图像调整为原始图像的宽高比

@@ -582,6 +582,7 @@ def main():
     # 语义："down_blocks.2.attentions.1","down_blocks.3.attentions.0"
     # 纹理："up_blocks.0.attentions.1","up_blocks.1.attentions.0"
 
+    init_img=init_img.convert("L").convert("RGB")
     # 生成图像
     images = ip_model.generate(
         pil_image=texture_image,
