@@ -35,6 +35,7 @@ __pycache__/
 /results
 /oldway
 /copy2
+/samples
 
 infer-text.py
 infer-inverse.py
